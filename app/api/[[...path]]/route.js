@@ -47,6 +47,7 @@ async function getUserProfile(request) {
 const INVENTORY_WEBHOOKS = {
   get: process.env.N8N_GET_MEDICINES_URL || 'https://n8n.jehadq4.io/webhook/get-medicines',
   update: process.env.N8N_UPDATE_STOCK_URL || 'https://n8n.jehadq4.io/webhook/update-stock',
+  add: process.env.N8N_ADD_MEDICINE_URL || 'https://n8n.jehadq4.io/webhook/add-medicine',
   delete: process.env.N8N_DELETE_MEDICINE_URL || 'https://n8n.jehadq4.io/webhook/delete-medicine',
 }
 
@@ -285,6 +286,47 @@ async function handle(request, { params }) {
 
     // -------- USERS LIST (admin only) --------
     // -------- INVENTORY MANAGEMENT (ADMIN ONLY) --------
+    if (route === '/inventory/source' && method === 'GET') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.get)
+      return cors(NextResponse.json(data))
+    }
+
+    if (route === '/inventory/stock' && method === 'POST') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const body = await request.json()
+      const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.update, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      return cors(NextResponse.json(data || { ok: true }))
+    }
+
+    if (route === '/inventory/add' && method === 'POST') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const body = await request.json()
+      const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.add, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      return cors(NextResponse.json(data || { ok: true }))
+    }
+
+    if (route === '/inventory/delete' && method === 'POST') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const body = await request.json()
+      const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.delete, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      return cors(NextResponse.json(data || { ok: true }))
+    }
+
     if (route === '/inventory' && method === 'GET') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))

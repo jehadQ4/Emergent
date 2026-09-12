@@ -6,6 +6,7 @@
 ```env
 N8N_GET_MEDICINES_URL=https://n8n.jehadq4.io/webhook/get-medicines
 N8N_UPDATE_STOCK_URL=https://n8n.jehadq4.io/webhook/update-stock
+N8N_ADD_MEDICINE_URL=https://n8n.jehadq4.io/webhook/add-medicine
 N8N_DELETE_MEDICINE_URL=https://n8n.jehadq4.io/webhook/delete-medicine
 ```
 

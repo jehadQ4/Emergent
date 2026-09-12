@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, DollarSign, Hash, Package, History, Loader2, ShieldCheck, X, LogOut, UserPlus, User, Trash2, Users as UsersIcon, Warehouse, Plus, Minus, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { getBrowserSupabase } from '@/lib/supabaseBrowser'
+import InventorySheetTab from '@/components/inventory-sheet-tab'
 
 function formatNumber(n) {
   if (n === null || n === undefined || n === '') return '—'
@@ -794,7 +795,7 @@ function App() {
           <TabsContent value="search"><SearchTab authedFetch={authedFetch} /></TabsContent>
           {isAdmin && <TabsContent value="admin"><AdminTab authedFetch={authedFetch} /></TabsContent>}
           {isAdmin && <TabsContent value="users"><UsersTab authedFetch={authedFetch} currentUser={profile} /></TabsContent>}
-          {isAdmin && <TabsContent value="inventory"><InventoryTab authedFetch={authedFetch} /></TabsContent>}
+          {isAdmin && <TabsContent value="inventory"><InventorySheetTab authedFetch={authedFetch} /></TabsContent>}
         </Tabs>
       </main>
       <footer className="border-t mt-12 py-4 text-center text-xs text-muted-foreground">نظام بحث الأدوية — Supabase + Next.js</footer>
