@@ -25,10 +25,12 @@ export default function InventorySheetTab({ authedFetch }) {
   const [addingMedicine, setAddingMedicine] = useState(false);
   const [newMedicine, setNewMedicine] = useState(EMPTY_FORM);
 
- const fetchMedicines = useCallback(async () => {
+ const fetchMedicines = useCallback(async ({ silent = false } = {}) => {
   try {
-    setLoading(true);
-    setError("");
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
 
     const response = await authedFetch("/api/inventory/source", {
       method: "GET",
@@ -69,10 +71,12 @@ export default function InventorySheetTab({ authedFetch }) {
     setMedicines(rows);
   } catch (fetchError) {
     console.error("خطأ في جلب الأدوية:", fetchError);
-    setError(fetchError.message || "تعذر جلب الأدوية");
-    setMedicines([]);
+    if (!silent) {
+      setError(fetchError.message || "تعذر جلب الأدوية");
+      setMedicines([]);
+    }
   } finally {
-    setLoading(false);
+    if (!silent) setLoading(false);
   }
 }, [authedFetch]);
 
@@ -176,8 +180,17 @@ export default function InventorySheetTab({ authedFetch }) {
         ...current,
         [medicineKey]: 1,
       }));
-
-      await fetchMedicines();
+      setMedicines((current) => current.map((item) =>
+        getMedicineKey(item) === medicineKey
+          ? {
+              ...item,
+              "الكمية": newQuantity,
+              "القيمة الإجمالية": newQuantity * toNumber(item["السعر"]),
+              "الحالة": newQuantity <= toNumber(item["الحد الأدنى"]) ? "إعادة طلب" : "متوفر",
+            }
+          : item
+      ));
+      fetchMedicines({ silent: true });
     } catch (updateError) {
       console.error("خطأ في تحديث المخزون:", updateError);
       toast.error(updateError.message || "تعذر تحديث المخزون");
@@ -229,7 +242,10 @@ export default function InventorySheetTab({ authedFetch }) {
       }
 
       toast.success(`تم حذف ${drugName} بالكامل`);
-      await fetchMedicines();
+      setMedicines((current) => current.filter(
+        (item) => getMedicineKey(item) !== medicineKey
+      ));
+      fetchMedicines({ silent: true });
     } catch (deleteError) {
       console.error("خطأ في حذف الدواء:", deleteError);
       toast.error(deleteError.message || "تعذر حذف الدواء");
@@ -334,8 +350,23 @@ export default function InventorySheetTab({ authedFetch }) {
 
       setNewMedicine(EMPTY_FORM);
       setShowAddForm(false);
-
-      await fetchMedicines();
+      setMedicines((current) => [
+        ...current,
+        {
+          row_number: `pending-${newDrugCode}`,
+          "رمز الدواء": newDrugCode,
+          "اسم الدواء": drugName,
+          "التصنيف": category,
+          "تاريخ الانتهاء": newMedicine.expiryDate,
+          "الكمية": quantity,
+          "الحد الأدنى": minimumQuantity,
+          "السعر": price,
+          "القيمة الإجمالية": quantity * price,
+          "الحالة": quantity > 0 ? "متوفر" : "غير متوفر",
+          _pending: true,
+        },
+      ]);
+      fetchMedicines({ silent: true });
     } catch (addError) {
       console.error("خطأ في إضافة الدواء:", addError);
       toast.error(addError.message || "تعذر إضافة الدواء");
@@ -365,7 +396,7 @@ export default function InventorySheetTab({ authedFetch }) {
             <button
               type="button"
               className="secondaryButton"
-              onClick={fetchMedicines}
+              onClick={() => fetchMedicines()}
               disabled={loading}
             >
               {loading ? "جاري التحديث..." : "تحديث البيانات"}
@@ -399,7 +430,7 @@ export default function InventorySheetTab({ authedFetch }) {
             <button
               type="button"
               className="primaryButton"
-              onClick={fetchMedicines}
+              onClick={() => fetchMedicines()}
             >
               إعادة المحاولة
             </button>
@@ -459,7 +490,7 @@ export default function InventorySheetTab({ authedFetch }) {
 
                   const numericAmount = Number(enteredAmount);
 
-                  const isBusy = busyMedicine === medicineKey;
+                  const isBusy = busyMedicine === medicineKey || medicine._pending;
 
                   const invalidAmount =
                     !Number.isInteger(numericAmount) ||
