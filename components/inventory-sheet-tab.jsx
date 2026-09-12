@@ -15,6 +15,7 @@ const EMPTY_FORM = {
 export default function InventorySheetTab({ authedFetch }) {
   const [medicines, setMedicines] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all");
   const [stockAmounts, setStockAmounts] = useState({});
 
   const [loading, setLoading] = useState(true);
@@ -87,17 +88,67 @@ export default function InventorySheetTab({ authedFetch }) {
   const filteredMedicines = useMemo(() => {
     const search = normalizeText(searchTerm);
 
-    if (!search) {
-      return medicines;
-    }
-
     return medicines.filter((medicine) => {
       const name = normalizeText(medicine["اسم الدواء"]);
       const category = normalizeText(medicine["التصنيف"]);
+      const matchesSearch = !search || name.includes(search) || category.includes(search);
+      const quantity = toNumber(medicine["الكمية"]);
+      const minimum = medicine["الحد الأدنى"] === undefined || medicine["الحد الأدنى"] === ""
+        ? 20 : toNumber(medicine["الحد الأدنى"]);
+      const expiry = getExpiryStatus(medicine["تاريخ الانتهاء"]);
+      const matchesFilter = activeFilter === "all"
+        || (activeFilter === "low" && quantity <= minimum)
+        || (activeFilter === "soon" && expiry === "soon")
+        || (activeFilter === "expired" && expiry === "expired")
+        || (activeFilter === "available" && quantity > minimum && expiry !== "expired");
 
-      return name.includes(search) || category.includes(search);
+      return matchesSearch && matchesFilter;
     });
-  }, [medicines, searchTerm]);
+  }, [medicines, searchTerm, activeFilter]);
+
+  const statistics = useMemo(() => medicines.reduce((stats, medicine) => {
+    const quantity = toNumber(medicine["الكمية"]);
+    const minimum = medicine["الحد الأدنى"] === undefined || medicine["الحد الأدنى"] === ""
+      ? 20 : toNumber(medicine["الحد الأدنى"]);
+    const expiry = getExpiryStatus(medicine["تاريخ الانتهاء"]);
+    stats.totalValue += quantity * toNumber(medicine["السعر"]);
+    if (quantity <= minimum) stats.low += 1;
+    if (expiry === "soon") stats.soon += 1;
+    if (expiry === "expired") stats.expired += 1;
+    return stats;
+  }, { totalValue: 0, low: 0, soon: 0, expired: 0 }), [medicines]);
+
+  const reportRows = useCallback(() => filteredMedicines.map((medicine) => ({
+    "الرمز": medicine["رمز الدواء"] || "",
+    "اسم الدواء": medicine["اسم الدواء"] || "",
+    "التصنيف": medicine["التصنيف"] || "",
+    "الكمية": toNumber(medicine["الكمية"]),
+    "الحد الأدنى": medicine["الحد الأدنى"] === undefined || medicine["الحد الأدنى"] === "" ? 20 : toNumber(medicine["الحد الأدنى"]),
+    "السعر": toNumber(medicine["السعر"]),
+    "القيمة الإجمالية": toNumber(medicine["الكمية"]) * toNumber(medicine["السعر"]),
+    "تاريخ الانتهاء": formatDate(medicine["تاريخ الانتهاء"]),
+    "الحالة": medicine["الحالة"] || "",
+  })), [filteredMedicines]);
+
+  const exportExcel = async () => {
+    if (!filteredMedicines.length) { toast.error("لا توجد بيانات لتصديرها"); return; }
+    const XLSX = await import("xlsx");
+    const sheet = XLSX.utils.json_to_sheet(reportRows());
+    sheet["!cols"] = [{ wch: 10 }, { wch: 28 }, { wch: 14 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 14 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "تقرير المخزن");
+    XLSX.writeFile(workbook, `تقرير-المخزن-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("تم تصدير تقرير Excel");
+  };
+
+  const exportPdf = () => {
+    if (!filteredMedicines.length) { toast.error("لا توجد بيانات لتصديرها"); return; }
+    const popup = window.open("", "_blank", "width=1100,height=800");
+    if (!popup) { toast.error("اسمح بالنوافذ المنبثقة لإنشاء التقرير"); return; }
+    const rows = reportRows().map((row) => `<tr>${Object.values(row).map(value => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
+    popup.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>تقرير المخزن</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#26232d}h1{color:#655d90;margin-bottom:5px}.meta{color:#666;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#655d90;color:white;padding:8px;border:1px solid #ddd}td{padding:7px;border:1px solid #ddd;text-align:center}tr:nth-child(even){background:#f7f6fa}.summary{display:flex;gap:12px;margin:15px 0}.summary span{border:1px solid #ddd;border-radius:8px;padding:8px 12px}@media print{button{display:none}body{padding:0}}</style></head><body><h1>تقرير مخزن صيدلية الغسق</h1><div class="meta">التاريخ: ${new Date().toLocaleDateString("ar-IQ")} — عدد النتائج: ${filteredMedicines.length}</div><div class="summary"><span>قيمة المخزون: ${formatNumber(statistics.totalValue)} د.ع</span><span>منخفضة: ${statistics.low}</span><span>قريبة الانتهاء: ${statistics.soon}</span><span>منتهية: ${statistics.expired}</span></div><table><thead><tr>${Object.keys(reportRows()[0]).map(key => `<th>${key}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`);
+    popup.document.close();
+  };
 
   const handleStockAmountChange = (medicineKey, value) => {
     setStockAmounts((current) => ({
@@ -404,6 +455,14 @@ export default function InventorySheetTab({ authedFetch }) {
           </div>
         </header>
 
+        <div className="statsGrid">
+          <div className="statBox"><span>إجمالي الأدوية</span><strong>{medicines.length}</strong></div>
+          <div className="statBox valueStat"><span>قيمة المخزون</span><strong>{formatNumber(statistics.totalValue)} د.ع</strong></div>
+          <div className="statBox lowStat"><span>كمية منخفضة</span><strong>{statistics.low}</strong></div>
+          <div className="statBox soonStat"><span>قريب الانتهاء</span><strong>{statistics.soon}</strong></div>
+          <div className="statBox expiredStat"><span>منتهي</span><strong>{statistics.expired}</strong></div>
+        </div>
+
         <div className="searchSection">
           <input
             type="search"
@@ -417,6 +476,21 @@ export default function InventorySheetTab({ authedFetch }) {
           <span className="resultCount">
             عدد النتائج: {filteredMedicines.length}
           </span>
+        </div>
+
+        <div className="toolsRow">
+          <div className="filterButtons">
+            {[
+              ["all", "الكل"], ["available", "المتوفر"], ["low", "كمية منخفضة"],
+              ["soon", "قريب الانتهاء"], ["expired", "منتهي"],
+            ].map(([value, label]) => (
+              <button key={value} type="button" className={activeFilter === value ? "filterButton activeFilter" : "filterButton"} onClick={() => setActiveFilter(value)}>{label}</button>
+            ))}
+          </div>
+          <div className="exportButtons">
+            <button type="button" className="excelButton" onClick={exportExcel}>تصدير Excel</button>
+            <button type="button" className="pdfButton" onClick={exportPdf}>تقرير PDF</button>
+          </div>
         </div>
 
         {loading ? (
@@ -842,6 +916,53 @@ export default function InventorySheetTab({ authedFetch }) {
           margin-bottom: 20px;
         }
 
+        .statsGrid {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+
+        .statBox {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding: 16px;
+          border: 1px solid #e5e2ec;
+          border-radius: 12px;
+          background: white;
+          box-shadow: 0 3px 12px rgba(63, 55, 91, 0.07);
+        }
+
+        .statBox span { color: #6c6877; font-size: 13px; }
+        .statBox strong { color: #655d90; font-size: 22px; }
+        .valueStat strong { font-size: 17px; }
+        .lowStat { border-right: 4px solid #e5a000; }
+        .soonStat { border-right: 4px solid #f97316; }
+        .expiredStat { border-right: 4px solid #dc3545; }
+
+        .toolsRow {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .filterButtons, .exportButtons { display: flex; flex-wrap: wrap; gap: 7px; }
+        .filterButton, .excelButton, .pdfButton {
+          padding: 9px 14px;
+          border: 1px solid #d9d5e3;
+          border-radius: 8px;
+          background: white;
+          color: #48415f;
+          cursor: pointer;
+        }
+        .activeFilter { background: #655d90; color: white; border-color: #655d90; }
+        .excelButton { background: #198754; color: white; border-color: #198754; }
+        .pdfButton { background: #dc3545; color: white; border-color: #dc3545; }
+
         .searchSection input {
           flex: 1;
           padding: 13px 16px;
@@ -1087,6 +1208,7 @@ export default function InventorySheetTab({ authedFetch }) {
         }
 
         @media (max-width: 700px) {
+          .statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .searchSection {
             flex-direction: column;
           }
@@ -1206,4 +1328,13 @@ function formatNumber(value) {
   return new Intl.NumberFormat("ar-IQ").format(
     toNumber(value)
   );
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
