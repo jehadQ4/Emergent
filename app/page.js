@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, DollarSign, Hash, Package, History, Loader2, ShieldCheck, X, LogOut, UserPlus, User, Trash2, Users as UsersIcon } from 'lucide-react'
+import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, DollarSign, Hash, Package, History, Loader2, ShieldCheck, X, LogOut, UserPlus, User, Trash2, Users as UsersIcon, Warehouse, Plus, Minus, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { getBrowserSupabase } from '@/lib/supabaseBrowser'
 
@@ -350,6 +350,152 @@ function AdminTab({ authedFetch }) {
   )
 }
 
+function InventoryTab({ authedFetch }) {
+  const emptyForm = { name: '', scientific_name: '', company: '', quantity: '', min_stock: '10', expiry_date: '', batch_number: '', barcode: '', selling_price: '', notes: '' }
+  const [items, setItems] = useState([])
+  const [summary, setSummary] = useState({ total: 0, low_stock: 0, expiring: 0, expired: 0 })
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState(emptyForm)
+  const [saving, setSaving] = useState(false)
+  const [stockItem, setStockItem] = useState(null)
+  const [stockAction, setStockAction] = useState('increase')
+  const [stockQty, setStockQty] = useState('')
+  const debounceRef = useRef(null)
+
+  const refresh = useCallback(async (q = query) => {
+    setLoading(true)
+    try {
+      const r = await authedFetch(`/api/inventory?q=${encodeURIComponent(q.trim())}`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d?.error || 'فشل تحميل المخزن')
+      setItems(Array.isArray(d.items) ? d.items : [])
+      setSummary(d.summary || { total: 0, low_stock: 0, expiring: 0, expired: 0 })
+    } catch (e) { toast.error(e.message) } finally { setLoading(false) }
+  }, [authedFetch, query])
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => refresh(query), 220)
+    return () => clearTimeout(debounceRef.current)
+  }, [query, refresh])
+
+  async function addItem() {
+    if (!form.name.trim()) { toast.error('اسم الدواء مطلوب'); return }
+    setSaving(true)
+    try {
+      const r = await authedFetch('/api/inventory', { method: 'POST', body: JSON.stringify(form) })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d?.error || 'فشلت الإضافة')
+      toast.success('تمت إضافة الدواء إلى المخزن')
+      setOpen(false); setForm(emptyForm); refresh('')
+    } catch (e) { toast.error(e.message) } finally { setSaving(false) }
+  }
+
+  function openStock(item, action) {
+    setStockItem(item); setStockAction(action); setStockQty('')
+  }
+
+  async function changeStock() {
+    const qty = Number(stockQty)
+    if (!Number.isFinite(qty) || qty <= 0) { toast.error('أدخل كمية صحيحة'); return }
+    setSaving(true)
+    try {
+      const r = await authedFetch(`/api/inventory/${stockItem.id}`, { method: 'PATCH', body: JSON.stringify({ action: stockAction, qty }) })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d?.error || 'فشل تحديث الكمية')
+      toast.success(stockAction === 'increase' ? 'تمت زيادة الكمية' : 'تم صرف الكمية')
+      setStockItem(null); refresh()
+    } catch (e) { toast.error(e.message) } finally { setSaving(false) }
+  }
+
+  async function removeItem(item) {
+    if (!confirm(`حذف "${item.name}" من المخزن؟`)) return
+    const r = await authedFetch(`/api/inventory/${item.id}`, { method: 'DELETE' })
+    const d = await r.json()
+    if (!r.ok) toast.error(d?.error || 'فشل الحذف')
+    else { toast.success('تم حذف الدواء'); refresh() }
+  }
+
+  const expiryStatus = (item) => {
+    if (!item.expiry_date) return null
+    const days = Math.ceil((new Date(item.expiry_date) - new Date()) / 86400000)
+    if (days < 0) return { text: 'منتهي الصلاحية', cls: 'bg-red-100 text-red-800 border-red-200' }
+    if (days <= 90) return { text: `ينتهي خلال ${days} يوم`, cls: 'bg-amber-100 text-amber-800 border-amber-200' }
+    return null
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard icon={Package} label="مواد المخزن" value={formatNumber(summary.total)} accent="bg-primary/10 text-primary" />
+        <StatCard icon={AlertTriangle} label="بلغ الحد الأدنى" value={formatNumber(summary.low_stock)} accent="bg-orange-500/10 text-orange-700" />
+        <StatCard icon={Calendar} label="تنتهي خلال 90 يومًا" value={formatNumber(summary.expiring)} accent="bg-amber-500/10 text-amber-700" />
+        <StatCard icon={X} label="منتهية الصلاحية" value={formatNumber(summary.expired)} accent="bg-red-500/10 text-red-700" />
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-3 justify-between">
+        <div className="relative flex-1 max-w-2xl">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="ابحث بالاسم، الشركة أو الباركود..." className="pr-10 h-11" />
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refresh()} className="gap-2"><RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /> تحديث</Button>
+          <Button onClick={() => setOpen(true)} className="gap-2"><Plus className="size-4" /> إضافة دواء</Button>
+        </div>
+      </div>
+
+      <Card><CardContent className="p-0 overflow-x-auto">
+        {loading ? <div className="p-10 text-center text-muted-foreground"><Loader2 className="size-6 animate-spin inline-block ml-2" /> جاري التحميل...</div> : (
+          <table className="w-full text-sm min-w-[900px]">
+            <thead className="bg-muted text-muted-foreground"><tr><th className="p-3 text-right">الدواء</th><th className="p-3 text-right">الشركة</th><th className="p-3 text-right">الكمية</th><th className="p-3 text-right">الحد الأدنى</th><th className="p-3 text-right">الصلاحية</th><th className="p-3 text-right">الدفعة</th><th className="p-3 text-left">الإجراءات</th></tr></thead>
+            <tbody>{items.map(item => {
+              const low = Number(item.quantity || 0) <= Number(item.min_stock ?? 10)
+              const expiry = expiryStatus(item)
+              return <tr key={item.id} className={`border-t hover:bg-muted/30 ${low ? 'bg-orange-50/50' : ''}`}>
+                <td className="p-3"><p className="font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">{item.barcode || item.scientific_name || '—'}</p></td>
+                <td className="p-3">{item.company || '—'}</td>
+                <td className="p-3"><Badge variant={low ? 'destructive' : 'secondary'} className="num text-sm">{formatNumber(item.quantity || 0)}</Badge></td>
+                <td className="p-3 num">{formatNumber(item.min_stock ?? 10)}</td>
+                <td className="p-3">{expiry ? <Badge variant="outline" className={expiry.cls}>{expiry.text}</Badge> : <span className="num">{formatDate(item.expiry_date)}</span>}</td>
+                <td className="p-3 num">{item.batch_number || '—'}</td>
+                <td className="p-3"><div className="flex gap-1 justify-end">
+                  <Button size="sm" variant="outline" onClick={() => openStock(item, 'increase')} className="text-emerald-700 gap-1"><Plus className="size-3.5" /> زيادة</Button>
+                  <Button size="sm" variant="outline" onClick={() => openStock(item, 'dispense')} className="text-amber-700 gap-1"><Minus className="size-3.5" /> صرف</Button>
+                  <Button size="sm" variant="ghost" onClick={() => removeItem(item)}><Trash2 className="size-4 text-destructive" /></Button>
+                </div></td>
+              </tr>
+            })}{items.length === 0 && <tr><td colSpan="7" className="p-10 text-center text-muted-foreground">لا توجد نتائج.</td></tr>}</tbody>
+          </table>
+        )}
+      </CardContent></Card>
+
+      <div className="rounded-lg border bg-slate-50 p-3 text-xs text-muted-foreground flex items-center gap-2"><ExternalLink className="size-4" /> عمليات الإضافة والزيادة والصرف والحذف مرتبطة تلقائيًا بـ n8n عند ضبط رابط الـ Webhook في الخادم.</div>
+
+      <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>إضافة دواء إلى المخزن</DialogTitle><DialogDescription>سيُضاف الدواء إلى ملف البحث الحالي.</DialogDescription></DialogHeader>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input placeholder="اسم الدواء *" value={form.name} onChange={e => setForm({...form, name:e.target.value})} />
+          <Input placeholder="الاسم العلمي" value={form.scientific_name} onChange={e => setForm({...form, scientific_name:e.target.value})} />
+          <Input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company:e.target.value})} />
+          <Input type="number" min="0" placeholder="الكمية" value={form.quantity} onChange={e => setForm({...form, quantity:e.target.value})} />
+          <Input type="number" min="0" placeholder="الحد الأدنى" value={form.min_stock} onChange={e => setForm({...form, min_stock:e.target.value})} />
+          <Input type="date" value={form.expiry_date} onChange={e => setForm({...form, expiry_date:e.target.value})} />
+          <Input placeholder="رقم الدفعة" value={form.batch_number} onChange={e => setForm({...form, batch_number:e.target.value})} />
+          <Input placeholder="الباركود" value={form.barcode} onChange={e => setForm({...form, barcode:e.target.value})} />
+          <Input type="number" min="0" placeholder="سعر البيع" value={form.selling_price} onChange={e => setForm({...form, selling_price:e.target.value})} />
+          <Input placeholder="ملاحظات" value={form.notes} onChange={e => setForm({...form, notes:e.target.value})} />
+        </div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button onClick={addItem} disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : 'إضافة'}</Button></DialogFooter>
+      </DialogContent></Dialog>
+
+      <Dialog open={!!stockItem} onOpenChange={v => !v && setStockItem(null)}><DialogContent><DialogHeader><DialogTitle>{stockAction === 'increase' ? 'زيادة الكمية' : 'صرف من المخزن'}</DialogTitle><DialogDescription>{stockItem?.name} — الكمية الحالية: {formatNumber(stockItem?.quantity || 0)}</DialogDescription></DialogHeader>
+        <Input type="number" min="0.01" step="any" autoFocus placeholder="أدخل الكمية" value={stockQty} onChange={e => setStockQty(e.target.value)} />
+        <DialogFooter><Button variant="outline" onClick={() => setStockItem(null)}>إلغاء</Button><Button onClick={changeStock} disabled={saving} className={stockAction === 'dispense' ? 'bg-amber-600 hover:bg-amber-700' : ''}>{saving ? <Loader2 className="size-4 animate-spin" /> : 'تأكيد'}</Button></DialogFooter>
+      </DialogContent></Dialog>
+    </div>
+  )
+}
+
 function UsersTab({ authedFetch, currentUser }) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -643,14 +789,16 @@ function App() {
       </header>
       <main className="container mx-auto px-4 py-6">
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className={`grid ${isAdmin ? 'grid-cols-3 max-w-2xl' : 'grid-cols-1 max-w-xs'}`}>
+          <TabsList className={`grid ${isAdmin ? 'grid-cols-4 max-w-4xl' : 'grid-cols-1 max-w-xs'}`}>
             <TabsTrigger value="search" className="gap-2"><Search className="size-4" /> بحث</TabsTrigger>
             {isAdmin && <TabsTrigger value="admin" className="gap-2"><ShieldCheck className="size-4" /> رفع وإدارة</TabsTrigger>}
             {isAdmin && <TabsTrigger value="users" className="gap-2"><UsersIcon className="size-4" /> المستخدمون {pendingCount > 0 && <Badge className="bg-amber-500 hover:bg-amber-600 num text-[10px] px-1.5">{pendingCount}</Badge>}</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="inventory" className="gap-2"><Warehouse className="size-4" /> إدارة المخزن</TabsTrigger>}
           </TabsList>
           <TabsContent value="search"><SearchTab authedFetch={authedFetch} /></TabsContent>
           {isAdmin && <TabsContent value="admin"><AdminTab authedFetch={authedFetch} /></TabsContent>}
           {isAdmin && <TabsContent value="users"><UsersTab authedFetch={authedFetch} currentUser={profile} /></TabsContent>}
+          {isAdmin && <TabsContent value="inventory"><InventoryTab authedFetch={authedFetch} /></TabsContent>}
         </Tabs>
       </main>
       <footer className="border-t mt-12 py-4 text-center text-xs text-muted-foreground">نظام بحث الأدوية — Supabase + Next.js</footer>

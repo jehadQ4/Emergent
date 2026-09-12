@@ -44,6 +44,21 @@ async function getUserProfile(request) {
   return profile
 }
 
+async function notifyInventoryWebhook(payload) {
+  const webhook = process.env.N8N_INVENTORY_WEBHOOK_URL || process.env.N8N_WEBHOOK_URL
+  if (!webhook) return
+  try {
+    await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'pharmacy-inventory', occurred_at: new Date().toISOString(), ...payload }),
+      cache: 'no-store',
+    })
+  } catch (error) {
+    console.error('n8n inventory webhook error:', error)
+  }
+}
+
 async function handle(request, { params }) {
   const { path = [] } = await params
   const route = `/${path.join('/')}`
@@ -253,6 +268,96 @@ async function handle(request, { params }) {
     }
 
     // -------- USERS LIST (admin only) --------
+    // -------- INVENTORY MANAGEMENT (ADMIN ONLY) --------
+    if (route === '/inventory' && method === 'GET') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const url = new URL(request.url)
+      const q = (url.searchParams.get('q') || '').trim().toLowerCase()
+      const sb = supabaseAdmin()
+      const latestId = await getLatestUploadId(sb)
+      if (!latestId) return cors(NextResponse.json({ items: [], summary: { total: 0, low_stock: 0, expiring: 0, expired: 0 } }))
+      let dbQuery = sb.from('medicines').select('*').eq('upload_id', latestId).order('name').limit(2000)
+      if (q) dbQuery = dbQuery.ilike('search_text', `%${q}%`)
+      const { data, error } = await dbQuery
+      if (error) throw error
+      const items = data || []
+      const now = new Date(); now.setHours(0, 0, 0, 0)
+      const in90 = new Date(now); in90.setDate(in90.getDate() + 90)
+      const summary = items.reduce((s, item) => {
+        const qty = Number(item.quantity || 0), min = Number(item.min_stock ?? 10)
+        if (qty <= min) s.low_stock++
+        if (item.expiry_date) {
+          const expiry = new Date(item.expiry_date)
+          if (expiry < now) s.expired++
+          else if (expiry <= in90) s.expiring++
+        }
+        return s
+      }, { total: items.length, low_stock: 0, expiring: 0, expired: 0 })
+      return cors(NextResponse.json({ items, summary }))
+    }
+
+    if (route === '/inventory' && method === 'POST') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const body = await request.json()
+      if (!body?.name?.trim()) return cors(NextResponse.json({ error: 'اسم الدواء مطلوب' }, { status: 400 }))
+      const sb = supabaseAdmin()
+      const latestId = await getLatestUploadId(sb)
+      if (!latestId) return cors(NextResponse.json({ error: 'ارفع ملف الأدوية أولاً، ثم أضف الدواء إلى المخزن' }, { status: 400 }))
+      const row = {
+        upload_id: latestId, name: body.name.trim(), scientific_name: body.scientific_name || null,
+        company: body.company || null, quantity: Number(body.quantity || 0), min_stock: Number(body.min_stock ?? 10),
+        expiry_date: body.expiry_date || null, expiry_raw: body.expiry_date || null, batch_number: body.batch_number || null,
+        barcode: body.barcode || null, selling_price: body.selling_price === '' ? null : Number(body.selling_price),
+        notes: body.notes || null, warehouse: body.warehouse || 'المخزن الرئيسي',
+      }
+      const { data, error } = await sb.from('medicines').insert(row).select('*').single()
+      if (error) throw error
+      await notifyInventoryWebhook({ action: 'add', item: data, performed_by: profile.email })
+      return cors(NextResponse.json({ ok: true, item: data }))
+    }
+
+    if (route.startsWith('/inventory/') && method === 'PATCH') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const id = route.split('/')[2]
+      const body = await request.json()
+      if (!['increase', 'dispense'].includes(body?.action)) return cors(NextResponse.json({ error: 'إجراء غير صالح' }, { status: 400 }))
+      const qty = Number(body.qty)
+      if (!Number.isFinite(qty) || qty <= 0) return cors(NextResponse.json({ error: 'الكمية غير صالحة' }, { status: 400 }))
+      const sb = supabaseAdmin()
+      const latestId = await getLatestUploadId(sb)
+      const { data: current, error: findError } = await sb.from('medicines').select('*').eq('id', id).eq('upload_id', latestId).maybeSingle()
+      if (findError) throw findError
+      if (!current) return cors(NextResponse.json({ error: 'الدواء غير موجود في المخزن الحالي' }, { status: 404 }))
+      const currentQuantity = Number(current.quantity || 0)
+      const newQuantity = body.action === 'increase' ? currentQuantity + qty : currentQuantity - qty
+      if (newQuantity < 0) return cors(NextResponse.json({ error: 'الكمية المطلوبة أكبر من الكمية المتوفرة' }, { status: 400 }))
+      const { data, error } = await sb.from('medicines').update({ quantity: newQuantity }).eq('id', id).select('*').single()
+      if (error) throw error
+      await notifyInventoryWebhook({ action: body.action, qty, current_quantity: currentQuantity, new_quantity: newQuantity, item: data, performed_by: profile.email })
+      return cors(NextResponse.json({ ok: true, item: data }))
+    }
+
+    if (route.startsWith('/inventory/') && method === 'DELETE') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const id = route.split('/')[2]
+      const sb = supabaseAdmin()
+      const latestId = await getLatestUploadId(sb)
+      const { data: current } = await sb.from('medicines').select('*').eq('id', id).eq('upload_id', latestId).maybeSingle()
+      if (!current) return cors(NextResponse.json({ error: 'الدواء غير موجود في المخزن الحالي' }, { status: 404 }))
+      const { error } = await sb.from('medicines').delete().eq('id', id)
+      if (error) throw error
+      await notifyInventoryWebhook({ action: 'delete', item: current, performed_by: profile.email })
+      return cors(NextResponse.json({ ok: true }))
+    }
+
     if (route === '/users' && method === 'GET') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
