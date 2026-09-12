@@ -1,17 +1,12 @@
 # إعداد نظام إدارة المخزن
 
-بعد نشر التحديث، شغّل الأمر التالي مرة واحدة في **Supabase SQL Editor**:
-
-```sql
-alter table public.medicines
-add column if not exists min_stock numeric default 10;
-```
-
-لربط عمليات المخزن بـ n8n أضف متغير البيئة التالي إلى الخادم:
+نظام المخزن مستقل عن جدول أدوية Supabase ويقرأ حصراً من Google Sheet عبر n8n.
+يمكن تغيير روابط n8n الافتراضية بإضافة متغيرات البيئة التالية إلى الخادم:
 
 ```env
-N8N_INVENTORY_WEBHOOK_URL=https://your-n8n-domain/webhook/inventory
+N8N_GET_MEDICINES_URL=https://n8n.jehadq4.io/webhook/get-medicines
+N8N_UPDATE_STOCK_URL=https://n8n.jehadq4.io/webhook/update-stock
+N8N_DELETE_MEDICINE_URL=https://n8n.jehadq4.io/webhook/delete-medicine
 ```
 
-يرسل النظام عمليات `add` و`increase` و`dispense` و`delete`. عمليات الكمية تتضمن
-`qty` و`current_quantity` و`new_quantity`، ولا تتعطل العملية الأساسية إذا كان n8n غير متاح.
+لا تستخدم روابط `webhook-test` في الموقع المنشور لأنها لا تعمل إلا أثناء تنفيذ الاختبار داخل n8n.

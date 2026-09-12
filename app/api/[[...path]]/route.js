@@ -44,18 +44,34 @@ async function getUserProfile(request) {
   return profile
 }
 
-async function notifyInventoryWebhook(payload) {
-  const webhook = process.env.N8N_INVENTORY_WEBHOOK_URL || process.env.N8N_WEBHOOK_URL
-  if (!webhook) return
-  try {
-    await fetch(webhook, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'pharmacy-inventory', occurred_at: new Date().toISOString(), ...payload }),
-      cache: 'no-store',
-    })
-  } catch (error) {
-    console.error('n8n inventory webhook error:', error)
+const INVENTORY_WEBHOOKS = {
+  get: process.env.N8N_GET_MEDICINES_URL || 'https://n8n.jehadq4.io/webhook/get-medicines',
+  update: process.env.N8N_UPDATE_STOCK_URL || 'https://n8n.jehadq4.io/webhook/update-stock',
+  delete: process.env.N8N_DELETE_MEDICINE_URL || 'https://n8n.jehadq4.io/webhook/delete-medicine',
+}
+
+async function callInventoryWebhook(url, options = {}) {
+  const response = await fetch(url, { cache: 'no-store', ...options })
+  const text = await response.text()
+  let data = null
+  try { data = text ? JSON.parse(text) : null } catch { data = { message: text } }
+  if (!response.ok) throw new Error(data?.message || data?.error || `n8n error: ${response.status}`)
+  return data
+}
+
+function normalizeInventoryItem(row) {
+  return {
+    id: String(row.row_number ?? row['رمز الدواء'] ?? ''),
+    row_number: row.row_number,
+    medicine_code: row['رمز الدواء'],
+    name: row['اسم الدواء'] || '',
+    category: row['التصنيف'] || '',
+    expiry_date: row['تاريخ الانتهاء'] || null,
+    quantity: Number(row['الكمية'] || 0),
+    min_stock: Number(row['الحد الأدنى'] || 0),
+    price: Number(row['السعر'] || 0),
+    total_value: Number(row['القيمة الإجمالية'] || 0),
+    status: row['الحالة'] || '',
   }
 }
 
@@ -275,14 +291,9 @@ async function handle(request, { params }) {
       if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const url = new URL(request.url)
       const q = (url.searchParams.get('q') || '').trim().toLowerCase()
-      const sb = supabaseAdmin()
-      const latestId = await getLatestUploadId(sb)
-      if (!latestId) return cors(NextResponse.json({ items: [], summary: { total: 0, low_stock: 0, expiring: 0, expired: 0 } }))
-      let dbQuery = sb.from('medicines').select('*').eq('upload_id', latestId).order('name').limit(2000)
-      if (q) dbQuery = dbQuery.ilike('search_text', `%${q}%`)
-      const { data, error } = await dbQuery
-      if (error) throw error
-      const items = data || []
+      const raw = await callInventoryWebhook(INVENTORY_WEBHOOKS.get)
+      let items = (Array.isArray(raw) ? raw : raw?.data || raw?.items || []).map(normalizeInventoryItem)
+      if (q) items = items.filter(item => `${item.name} ${item.category} ${item.medicine_code}`.toLowerCase().includes(q))
       const now = new Date(); now.setHours(0, 0, 0, 0)
       const in90 = new Date(now); in90.setDate(in90.getDate() + 90)
       const summary = items.reduce((s, item) => {
@@ -304,20 +315,19 @@ async function handle(request, { params }) {
       if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const body = await request.json()
       if (!body?.name?.trim()) return cors(NextResponse.json({ error: 'اسم الدواء مطلوب' }, { status: 400 }))
-      const sb = supabaseAdmin()
-      const latestId = await getLatestUploadId(sb)
-      if (!latestId) return cors(NextResponse.json({ error: 'ارفع ملف الأدوية أولاً، ثم أضف الدواء إلى المخزن' }, { status: 400 }))
-      const row = {
-        upload_id: latestId, name: body.name.trim(), scientific_name: body.scientific_name || null,
-        company: body.company || null, quantity: Number(body.quantity || 0), min_stock: Number(body.min_stock ?? 10),
-        expiry_date: body.expiry_date || null, expiry_raw: body.expiry_date || null, batch_number: body.batch_number || null,
-        barcode: body.barcode || null, selling_price: body.selling_price === '' ? null : Number(body.selling_price),
-        notes: body.notes || null, warehouse: body.warehouse || 'المخزن الرئيسي',
+      const payload = {
+        action: 'add',
+        name: body.name.trim(),
+        category: body.category || '',
+        expiry_date: body.expiry_date || '',
+        quantity: Number(body.quantity || 0),
+        min_stock: Number(body.min_stock || 0),
+        price: Number(body.price || 0),
+        'اسم الدواء': body.name.trim(), 'التصنيف': body.category || '', 'تاريخ الانتهاء': body.expiry_date || '',
+        'الكمية': Number(body.quantity || 0), 'الحد الأدنى': Number(body.min_stock || 0), 'السعر': Number(body.price || 0),
       }
-      const { data, error } = await sb.from('medicines').insert(row).select('*').single()
-      if (error) throw error
-      await notifyInventoryWebhook({ action: 'add', item: data, performed_by: profile.email })
-      return cors(NextResponse.json({ ok: true, item: data }))
+      const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.update, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      return cors(NextResponse.json({ ok: true, result: data }))
     }
 
     if (route.startsWith('/inventory/') && method === 'PATCH') {
@@ -329,18 +339,16 @@ async function handle(request, { params }) {
       if (!['increase', 'dispense'].includes(body?.action)) return cors(NextResponse.json({ error: 'إجراء غير صالح' }, { status: 400 }))
       const qty = Number(body.qty)
       if (!Number.isFinite(qty) || qty <= 0) return cors(NextResponse.json({ error: 'الكمية غير صالحة' }, { status: 400 }))
-      const sb = supabaseAdmin()
-      const latestId = await getLatestUploadId(sb)
-      const { data: current, error: findError } = await sb.from('medicines').select('*').eq('id', id).eq('upload_id', latestId).maybeSingle()
-      if (findError) throw findError
-      if (!current) return cors(NextResponse.json({ error: 'الدواء غير موجود في المخزن الحالي' }, { status: 404 }))
-      const currentQuantity = Number(current.quantity || 0)
+      const currentQuantity = Number(body.current_quantity || 0)
       const newQuantity = body.action === 'increase' ? currentQuantity + qty : currentQuantity - qty
       if (newQuantity < 0) return cors(NextResponse.json({ error: 'الكمية المطلوبة أكبر من الكمية المتوفرة' }, { status: 400 }))
-      const { data, error } = await sb.from('medicines').update({ quantity: newQuantity }).eq('id', id).select('*').single()
-      if (error) throw error
-      await notifyInventoryWebhook({ action: body.action, qty, current_quantity: currentQuantity, new_quantity: newQuantity, item: data, performed_by: profile.email })
-      return cors(NextResponse.json({ ok: true, item: data }))
+      const payload = {
+        row_number: Number(body.row_number || id), medicine_code: body.medicine_code, id: body.medicine_code,
+        action: body.action, qty, amount: qty, current_quantity: currentQuantity, new_quantity: newQuantity,
+        quantity: newQuantity, 'رمز الدواء': body.medicine_code, 'الكمية': newQuantity,
+      }
+      const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.update, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      return cors(NextResponse.json({ ok: true, result: data, new_quantity: newQuantity }))
     }
 
     if (route.startsWith('/inventory/') && method === 'DELETE') {
@@ -348,14 +356,10 @@ async function handle(request, { params }) {
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
       if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const id = route.split('/')[2]
-      const sb = supabaseAdmin()
-      const latestId = await getLatestUploadId(sb)
-      const { data: current } = await sb.from('medicines').select('*').eq('id', id).eq('upload_id', latestId).maybeSingle()
-      if (!current) return cors(NextResponse.json({ error: 'الدواء غير موجود في المخزن الحالي' }, { status: 404 }))
-      const { error } = await sb.from('medicines').delete().eq('id', id)
-      if (error) throw error
-      await notifyInventoryWebhook({ action: 'delete', item: current, performed_by: profile.email })
-      return cors(NextResponse.json({ ok: true }))
+      const body = await request.json().catch(() => ({}))
+      const payload = { row_number: Number(body.row_number || id), medicine_code: body.medicine_code, id: body.medicine_code, 'رمز الدواء': body.medicine_code }
+      const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.delete, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      return cors(NextResponse.json({ ok: true, result: data }))
     }
 
     if (route === '/users' && method === 'GET') {

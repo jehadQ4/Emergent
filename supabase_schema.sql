@@ -45,7 +45,6 @@ create table if not exists public.medicines (
   scientific_name text,            -- الاسم العلمي
   company text,                    -- الشركة
   quantity numeric,                -- الكمية
-  min_stock numeric default 10,    -- الحد الأدنى للتنبيه في المخزن
   gift numeric,                    -- هدية
   rep_gift numeric,                -- هدية مندوب
   expiry_raw text,                 -- expiry as written in file
@@ -150,8 +149,6 @@ alter table public.profiles enable row level security;
 alter table public.uploads enable row level security;
 alter table public.medicines enable row level security;
 
--- Safe migration for databases created before inventory management was added
-alter table public.medicines add column if not exists min_stock numeric default 10;
 
 -- Allow authenticated users to read everything (search use case)
 drop policy if exists medicines_read on public.medicines;

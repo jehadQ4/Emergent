@@ -351,7 +351,7 @@ function AdminTab({ authedFetch }) {
 }
 
 function InventoryTab({ authedFetch }) {
-  const emptyForm = { name: '', scientific_name: '', company: '', quantity: '', min_stock: '10', expiry_date: '', batch_number: '', barcode: '', selling_price: '', notes: '' }
+  const emptyForm = { name: '', category: '', quantity: '', min_stock: '10', expiry_date: '', price: '' }
   const [items, setItems] = useState([])
   const [summary, setSummary] = useState({ total: 0, low_stock: 0, expiring: 0, expired: 0 })
   const [query, setQuery] = useState('')
@@ -402,7 +402,7 @@ function InventoryTab({ authedFetch }) {
     if (!Number.isFinite(qty) || qty <= 0) { toast.error('أدخل كمية صحيحة'); return }
     setSaving(true)
     try {
-      const r = await authedFetch(`/api/inventory/${stockItem.id}`, { method: 'PATCH', body: JSON.stringify({ action: stockAction, qty }) })
+      const r = await authedFetch(`/api/inventory/${stockItem.row_number}`, { method: 'PATCH', body: JSON.stringify({ action: stockAction, qty, current_quantity: stockItem.quantity, row_number: stockItem.row_number, medicine_code: stockItem.medicine_code }) })
       const d = await r.json()
       if (!r.ok) throw new Error(d?.error || 'فشل تحديث الكمية')
       toast.success(stockAction === 'increase' ? 'تمت زيادة الكمية' : 'تم صرف الكمية')
@@ -412,7 +412,7 @@ function InventoryTab({ authedFetch }) {
 
   async function removeItem(item) {
     if (!confirm(`حذف "${item.name}" من المخزن؟`)) return
-    const r = await authedFetch(`/api/inventory/${item.id}`, { method: 'DELETE' })
+    const r = await authedFetch(`/api/inventory/${item.row_number}`, { method: 'DELETE', body: JSON.stringify({ row_number: item.row_number, medicine_code: item.medicine_code }) })
     const d = await r.json()
     if (!r.ok) toast.error(d?.error || 'فشل الحذف')
     else { toast.success('تم حذف الدواء'); refresh() }
@@ -438,7 +438,7 @@ function InventoryTab({ authedFetch }) {
       <div className="flex flex-col md:flex-row gap-3 justify-between">
         <div className="relative flex-1 max-w-2xl">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="ابحث بالاسم، الشركة أو الباركود..." className="pr-10 h-11" />
+          <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="ابحث باسم الدواء، التصنيف أو الرمز..." className="pr-10 h-11" />
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => refresh()} className="gap-2"><RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /> تحديث</Button>
@@ -449,17 +449,17 @@ function InventoryTab({ authedFetch }) {
       <Card><CardContent className="p-0 overflow-x-auto">
         {loading ? <div className="p-10 text-center text-muted-foreground"><Loader2 className="size-6 animate-spin inline-block ml-2" /> جاري التحميل...</div> : (
           <table className="w-full text-sm min-w-[900px]">
-            <thead className="bg-muted text-muted-foreground"><tr><th className="p-3 text-right">الدواء</th><th className="p-3 text-right">الشركة</th><th className="p-3 text-right">الكمية</th><th className="p-3 text-right">الحد الأدنى</th><th className="p-3 text-right">الصلاحية</th><th className="p-3 text-right">الدفعة</th><th className="p-3 text-left">الإجراءات</th></tr></thead>
+            <thead className="bg-muted text-muted-foreground"><tr><th className="p-3 text-right">الدواء</th><th className="p-3 text-right">التصنيف</th><th className="p-3 text-right">الكمية</th><th className="p-3 text-right">الحد الأدنى</th><th className="p-3 text-right">الصلاحية</th><th className="p-3 text-right">السعر</th><th className="p-3 text-left">الإجراءات</th></tr></thead>
             <tbody>{items.map(item => {
               const low = Number(item.quantity || 0) <= Number(item.min_stock ?? 10)
               const expiry = expiryStatus(item)
               return <tr key={item.id} className={`border-t hover:bg-muted/30 ${low ? 'bg-orange-50/50' : ''}`}>
-                <td className="p-3"><p className="font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">{item.barcode || item.scientific_name || '—'}</p></td>
-                <td className="p-3">{item.company || '—'}</td>
+                <td className="p-3"><p className="font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">رمز: {item.medicine_code || '—'}</p></td>
+                <td className="p-3">{item.category || '—'}</td>
                 <td className="p-3"><Badge variant={low ? 'destructive' : 'secondary'} className="num text-sm">{formatNumber(item.quantity || 0)}</Badge></td>
                 <td className="p-3 num">{formatNumber(item.min_stock ?? 10)}</td>
                 <td className="p-3">{expiry ? <Badge variant="outline" className={expiry.cls}>{expiry.text}</Badge> : <span className="num">{formatDate(item.expiry_date)}</span>}</td>
-                <td className="p-3 num">{item.batch_number || '—'}</td>
+                <td className="p-3 num">{formatNumber(item.price)}</td>
                 <td className="p-3"><div className="flex gap-1 justify-end">
                   <Button size="sm" variant="outline" onClick={() => openStock(item, 'increase')} className="text-emerald-700 gap-1"><Plus className="size-3.5" /> زيادة</Button>
                   <Button size="sm" variant="outline" onClick={() => openStock(item, 'dispense')} className="text-amber-700 gap-1"><Minus className="size-3.5" /> صرف</Button>
@@ -471,20 +471,16 @@ function InventoryTab({ authedFetch }) {
         )}
       </CardContent></Card>
 
-      <div className="rounded-lg border bg-slate-50 p-3 text-xs text-muted-foreground flex items-center gap-2"><ExternalLink className="size-4" /> عمليات الإضافة والزيادة والصرف والحذف مرتبطة تلقائيًا بـ n8n عند ضبط رابط الـ Webhook في الخادم.</div>
+      <div className="rounded-lg border bg-slate-50 p-3 text-xs text-muted-foreground flex items-center gap-2"><ExternalLink className="size-4" /> هذه البيانات مأخوذة حصراً من Google Sheet عن طريق n8n ولا تستخدم جدول أدوية Supabase.</div>
 
-      <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>إضافة دواء إلى المخزن</DialogTitle><DialogDescription>سيُضاف الدواء إلى ملف البحث الحالي.</DialogDescription></DialogHeader>
+      <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>إضافة دواء إلى المخزن</DialogTitle><DialogDescription>سيُرسل الدواء إلى Google Sheet عن طريق n8n.</DialogDescription></DialogHeader>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input placeholder="اسم الدواء *" value={form.name} onChange={e => setForm({...form, name:e.target.value})} />
-          <Input placeholder="الاسم العلمي" value={form.scientific_name} onChange={e => setForm({...form, scientific_name:e.target.value})} />
-          <Input placeholder="الشركة" value={form.company} onChange={e => setForm({...form, company:e.target.value})} />
+          <Input placeholder="التصنيف" value={form.category} onChange={e => setForm({...form, category:e.target.value})} />
           <Input type="number" min="0" placeholder="الكمية" value={form.quantity} onChange={e => setForm({...form, quantity:e.target.value})} />
           <Input type="number" min="0" placeholder="الحد الأدنى" value={form.min_stock} onChange={e => setForm({...form, min_stock:e.target.value})} />
           <Input type="date" value={form.expiry_date} onChange={e => setForm({...form, expiry_date:e.target.value})} />
-          <Input placeholder="رقم الدفعة" value={form.batch_number} onChange={e => setForm({...form, batch_number:e.target.value})} />
-          <Input placeholder="الباركود" value={form.barcode} onChange={e => setForm({...form, barcode:e.target.value})} />
-          <Input type="number" min="0" placeholder="سعر البيع" value={form.selling_price} onChange={e => setForm({...form, selling_price:e.target.value})} />
-          <Input placeholder="ملاحظات" value={form.notes} onChange={e => setForm({...form, notes:e.target.value})} />
+          <Input type="number" min="0" placeholder="السعر" value={form.price} onChange={e => setForm({...form, price:e.target.value})} />
         </div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button onClick={addItem} disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : 'إضافة'}</Button></DialogFooter>
       </DialogContent></Dialog>
 
