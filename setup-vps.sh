@@ -15,10 +15,10 @@ read -p "📁 Enter your GitHub repo URL (e.g. https://github.com/USER/REPO.git)
 echo "🔄 Updating system..."
 apt update && apt upgrade -y
 
-echo "📦 Installing Node.js 20 + Yarn + PM2 + Nginx + Certbot..."
+echo "📦 Installing Node.js 20 + npm + PM2 + Nginx + Certbot..."
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs nginx certbot python3-certbot-nginx git ufw
-npm install -g yarn pm2
+npm install -g pm2
 
 echo "📥 Cloning repository..."
 mkdir -p /var/www
@@ -40,14 +40,14 @@ if [ ! -f .env ]; then
 fi
 
 echo "🏗️  Building app..."
-yarn install
-NODE_OPTIONS="--max-old-space-size=2048" yarn build
+npm install
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
 
 echo "🚀 Starting with PM2..."
-if pm2 describe pharmacy > /dev/null 2>&1; then
-  pm2 restart pharmacy
+if pm2 describe Emergent > /dev/null 2>&1; then
+  pm2 restart Emergent --update-env
 else
-  pm2 start "yarn start" --name pharmacy
+  pm2 start "npm start" --name Emergent
 fi
 pm2 save
 pm2 startup systemd -u root --hp /root | tail -1 | bash || true
@@ -89,4 +89,4 @@ echo "✅ ============================================"
 echo "✅  Deployment complete!"
 echo "✅  Open: https://$DOMAIN"
 echo "✅ ============================================"
-pm2 status pharmacy
+pm2 status Emergent

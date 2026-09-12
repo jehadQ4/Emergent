@@ -24,8 +24,8 @@ ssh root@YOUR_VPS_IP
 apt update && apt upgrade -y
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs nginx certbot python3-certbot-nginx git ufw
-npm install -g yarn pm2
-node -v && yarn -v && pm2 -v
+npm install -g pm2
+node -v && npm -v && pm2 -v
 ```
 
 ## Step 3 — Clone the repository
@@ -49,9 +49,9 @@ Fill in your Supabase keys + domain. Save with **Ctrl+O → Enter → Ctrl+X**.
 ## Step 5 — Build and run
 
 ```bash
-yarn install
-yarn build
-pm2 start "yarn start" --name pharmacy
+npm install
+npm run build
+pm2 start "npm start" --name Emergent
 pm2 save
 pm2 startup        # then run the command it prints
 ```
@@ -121,9 +121,9 @@ When you push new code to GitHub:
 ```bash
 cd /var/www/pharmacy
 git pull
-yarn install
-yarn build
-pm2 restart pharmacy
+npm install
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
+pm2 restart Emergent --update-env
 ```
 
 Or run the helper script:
@@ -137,7 +137,7 @@ Or run the helper script:
 
 ### App not starting / 502 error
 ```bash
-pm2 logs pharmacy --lines 50
+pm2 logs Emergent --lines 50
 ```
 
 ### Nginx config error
@@ -149,7 +149,7 @@ tail -f /var/log/nginx/error.log
 ### Out of memory during build (small VPS)
 Increase build memory:
 ```bash
-NODE_OPTIONS="--max-old-space-size=2048" yarn build
+NODE_OPTIONS="--max-old-space-size=2048" npm run build
 ```
 
 ### Reset PM2 after VPS reboot doesn't restart app

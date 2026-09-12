@@ -651,22 +651,18 @@ const submit = async (e) => {
 
       toast.success("تم تسجيل الدخول");
     } else {
-      const { error } = await sb.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
-        },
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, full_name: fullName }),
       });
-
-      if (error) {
-        toast.error(error.message);
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data?.error || 'تعذر إنشاء الحساب');
         return;
       }
-
-      toast.success("تم إنشاء الحساب");
+      toast.success("تم إنشاء الحساب وهو بانتظار موافقة الرئيس");
+      setMode('login');
     }
   } finally {
     setLoading(false);

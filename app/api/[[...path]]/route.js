@@ -40,7 +40,8 @@ async function getUserProfile(request) {
   if (error || !user) return null
   const admin = supabaseAdmin()
   const { data: profile } = await admin.from('profiles').select('*').eq('id', user.id).maybeSingle()
-  if (!profile) return { id: user.id, email: user.email, role: 'staff', full_name: user.user_metadata?.full_name || null }
+  // Never grant access implicitly. Accounts without a profile must wait for admin approval.
+  if (!profile) return { id: user.id, email: user.email, role: 'pending', full_name: user.user_metadata?.full_name || null }
   return profile
 }
 
@@ -52,7 +53,7 @@ const INVENTORY_WEBHOOKS = {
 }
 
 async function callInventoryWebhook(url, options = {}) {
-  const response = await fetch(url, { cache: 'no-store', ...options })
+  const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(20000), ...options })
   const text = await response.text()
   let data = null
   try { data = text ? JSON.parse(text) : null } catch { data = { message: text } }
@@ -119,22 +120,39 @@ async function handle(request, { params }) {
       const latestId = await getLatestUploadId(sb)
       if (!latestId) return cors(NextResponse.json({ total_records: 0, by_warehouse: [] }))
 
-      // جلب الإحصائيات العامة + توزيع الأدوية حسب المخزن
-      const { data: general, error: gErr } = await sb.from('medicines')
-        .select('warehouse', { count: 'exact' })
-        .eq('upload_id', latestId)
+      const { count: totalRecords, error: countError } = await sb.from('medicines')
+        .select('*', { count: 'exact', head: true }).eq('upload_id', latestId)
+      if (countError) throw countError
+      const { count: totalUploads, error: uploadCountError } = await sb.from('uploads')
+        .select('*', { count: 'exact', head: true })
+      if (uploadCountError) throw uploadCountError
 
-      if (gErr) throw gErr
+      // Supabase limits a response to 1000 rows, so read the current upload in safe pages.
+      const allRows = []
+      const pageSize = 1000
+      for (let from = 0; from < (totalRecords || 0); from += pageSize) {
+        const { data: page, error: pageError } = await sb.from('medicines')
+          .select('name,company,warehouse').eq('upload_id', latestId).range(from, from + pageSize - 1)
+        if (pageError) throw pageError
+        allRows.push(...(page || []))
+      }
 
-      // تجميع البيانات في JS (عدد الأدوية لكل مخزن)
       const warehouseMap = {}
-      general.forEach(item => {
+      const medicineNames = new Set()
+      const companies = new Set()
+      allRows.forEach(item => {
         const wh = item.warehouse || 'غير محدد'
         warehouseMap[wh] = (warehouseMap[wh] || 0) + 1
+        if (item.name) medicineNames.add(item.name.trim().toLowerCase())
+        if (item.company) companies.add(item.company.trim().toLowerCase())
       })
 
       return cors(NextResponse.json({
-        total_records: general.length,
+        total_records: totalRecords || 0,
+        unique_medicines: medicineNames.size,
+        total_uploads: totalUploads || 0,
+        warehouses_count: Object.keys(warehouseMap).length,
+        companies_count: companies.size,
         by_warehouse: Object.entries(warehouseMap).map(([name, count]) => ({ name, count }))
       }))
     }
@@ -158,6 +176,13 @@ async function handle(request, { params }) {
       const file = formData.get('file')
       const warehouseHint = formData.get('warehouse') || null
       if (!file) return cors(NextResponse.json({ error: 'No file provided' }, { status: 400 }))
+      const extension = String(file.name || '').toLowerCase().split('.').pop()
+      if (!['xlsx', 'xls', 'csv'].includes(extension)) {
+        return cors(NextResponse.json({ error: 'نوع الملف غير مدعوم. استخدم xlsx أو xls أو csv' }, { status: 400 }))
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        return cors(NextResponse.json({ error: 'حجم الملف أكبر من الحد المسموح (25 MB)' }, { status: 413 }))
+      }
 
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
