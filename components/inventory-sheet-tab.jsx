@@ -1207,7 +1207,7 @@ export default function InventorySheetTab({ authedFetch }) {
           color: white;
         }
 
-        @media (max-width: 700px) {
+        @media (max-width: 900px) {
           .statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .page { padding: 12px 0; }
           .container { padding: 0 10px; }

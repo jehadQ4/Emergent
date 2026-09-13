@@ -64,6 +64,7 @@
 }
 
 * { border-color: hsl(var(--border)); }
+html, body { max-width: 100%; overflow-x: hidden; }
 body { background: hsl(var(--background)); color: hsl(var(--foreground)); }
 
 /* قمت بتغيير اسم الكلاس ليطابق خط الهوية (Thmanyah) */
