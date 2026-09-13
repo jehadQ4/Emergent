@@ -215,24 +215,28 @@ function SearchTab({ authedFetch }) {
           <span className="text-xs text-emerald-700">رُفع في {formatDate(currentFile.created_at)}</span>
         </div>
       )}
-      <div className="relative">
-        <Search className="absolute right-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={e => { setQuery(e.target.value); setShowSuggest(true) }}
-          onFocus={() => setShowSuggest(true)}
-          onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
-          placeholder="ابحث عن دواء بالعربي أو الإنجليزي، أو الشركة، أو الباركود..."
-          className="h-14 pr-12 text-lg shadow-sm border-2 focus-visible:ring-primary"
-        />
-        {query && (<button onClick={() => setQuery('')} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="size-5" /></button>)}
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="absolute right-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={e => { setQuery(e.target.value); setShowSuggest(true) }}
+            onFocus={() => setShowSuggest(true)}
+            onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
+            onKeyDown={e => { if (e.key === 'Escape') setShowSuggest(false) }}
+            placeholder="ابحث عن دواء بالعربي أو الإنجليزي، أو الشركة، أو الباركود..."
+            className="h-14 pr-12 text-base sm:text-lg shadow-sm border-2 focus-visible:ring-primary"
+          />
+          {query && (<button type="button" aria-label="مسح البحث" onClick={() => { setQuery(''); setShowSuggest(false) }} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-5" /></button>)}
+        </div>
         {showSuggest && suggestions.length > 0 && (
-          <div className="absolute z-30 mt-2 w-full rounded-lg border bg-popover shadow-lg overflow-hidden">
+          <div className="relative z-10 w-full rounded-xl border bg-popover shadow-sm overflow-hidden">
+            <div className="px-4 py-2 text-xs font-medium text-muted-foreground bg-muted/40">أفضل التطابقات</div>
             {suggestions.map((s, i) => (
               <button key={s.name} onMouseDown={(e) => { e.preventDefault(); setQuery(s.name); setShowSuggest(false) }}
-                className="w-full text-right px-4 py-3 hover:bg-accent border-b last:border-b-0 flex items-center justify-between gap-3">
-                <div className="min-w-0"><p className="font-medium truncate">{s.name}</p><p className="text-xs text-muted-foreground truncate">{s.company || s.scientific_name || '—'}</p></div>
-                <Badge variant="outline" className="num">{s.hits} سجل</Badge>
+                className="w-full text-right px-4 py-3 hover:bg-muted border-t first:border-t-0 flex items-center justify-between gap-3">
+                <div className="min-w-0"><p className="font-semibold truncate">{s.name}</p><p className="text-xs text-muted-foreground truncate mt-0.5">{s.company || s.scientific_name || '—'}</p></div>
+                <Badge variant="secondary" className="num shrink-0">{s.hits} سجل</Badge>
               </button>
             ))}
           </div>
