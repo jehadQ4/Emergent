@@ -148,16 +148,14 @@ function SearchTab({ authedFetch }) {
   const [selected, setSelected] = useState(null)
   const [open, setOpen] = useState(false)
   const [currentFile, setCurrentFile] = useState(null)
-  const [uploadedFiles, setUploadedFiles] = useState([])
   const debounceRef = useRef(null)
 
   // Load current upload info
   useEffect(() => {
     authedFetch('/api/uploads').then(r => r.json()).then(d => {
       if (Array.isArray(d) && d.length > 0) {
-        setUploadedFiles(d)
-        const savedId = window.localStorage.getItem('pharmacy-search-upload-id')
-        setCurrentFile(d.find(file => file.id === savedId) || d[0])
+        // The API sorts numbered filenames (1...190) by their file number.
+        setCurrentFile(d[0])
       }
     }).catch(() => {})
   }, [authedFetch])
@@ -168,12 +166,12 @@ function SearchTab({ authedFetch }) {
     const q = query.trim()
     if (!q) {
       setSuggestions([])
-      authedFetch(`/api/search?q=&limit=24&upload_id=${encodeURIComponent(currentFile.id)}`).then(r => r.json()).then(d => setResults(Array.isArray(d) ? d : []))
+      authedFetch('/api/search?q=&limit=50').then(r => r.json()).then(d => setResults(Array.isArray(d) ? d : []))
       return
     }
     debounceRef.current = setTimeout(async () => {
       try {
-        const rRes = await authedFetch(`/api/search?q=${encodeURIComponent(q)}&limit=100&upload_id=${encodeURIComponent(currentFile.id)}`)
+        const rRes = await authedFetch(`/api/search?q=${encodeURIComponent(q)}&limit=100`)
         const rData = await rRes.json()
         const rows = Array.isArray(rData) ? rData : []
         const names = new Map()
@@ -215,19 +213,6 @@ function SearchTab({ authedFetch }) {
           <span className="font-semibold text-emerald-900">{currentFile.filename}</span>
           <Badge variant="outline" className="border-emerald-300 num text-emerald-800">{formatNumber(currentFile.rows_count)} سجل</Badge>
           <span className="text-xs text-emerald-700">رُفع في {formatDate(currentFile.created_at)}</span>
-          {uploadedFiles.length > 1 && (
-            <Select value={currentFile.id} onValueChange={id => {
-              const selectedFile = uploadedFiles.find(file => file.id === id)
-              if (selectedFile) {
-                setCurrentFile(selectedFile)
-                setQuery(''); setResults([]); setSuggestions([])
-                window.localStorage.setItem('pharmacy-search-upload-id', id)
-              }
-            }}>
-              <SelectTrigger className="w-full sm:w-[240px] h-9 mr-auto bg-white"><SelectValue placeholder="اختر ملف البحث" /></SelectTrigger>
-              <SelectContent>{uploadedFiles.map(file => <SelectItem key={file.id} value={file.id}>{file.filename} — {formatNumber(file.rows_count)} سجل</SelectItem>)}</SelectContent>
-            </Select>
-          )}
         </div>
       )}
       <div className="relative">

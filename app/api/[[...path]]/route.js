@@ -77,6 +77,20 @@ function normalizeInventoryItem(row) {
   }
 }
 
+function uploadSequence(filename) {
+  const stem = String(filename ?? '').replace(/\.[^.]+$/, '')
+  const numbers = stem.match(/\d+/g)
+  return numbers?.length ? Number(numbers[numbers.length - 1]) : -1
+}
+
+function sortUploadsNewestFirst(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const sequenceDifference = uploadSequence(b.filename) - uploadSequence(a.filename)
+    if (sequenceDifference) return sequenceDifference
+    return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  })
+}
+
 function normalizeSearchText(value) {
   return String(value ?? '')
     .toLowerCase()
@@ -247,9 +261,9 @@ async function handle(request, { params }) {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
       const sb = supabaseAdmin()
-      const { data, error } = await sb.from('uploads').select('*').order('created_at', { ascending: false }).limit(100)
+      const { data, error } = await sb.from('uploads').select('*').limit(500)
       if (error) throw error
-      return cors(NextResponse.json(data || []))
+      return cors(NextResponse.json(sortUploadsNewestFirst(data)))
     }
 
     // -------- UPLOAD FILE (ADMIN ONLY) --------
@@ -308,8 +322,9 @@ async function handle(request, { params }) {
 
     // Helper to get latest upload id (for "current dataset" filtering)
     async function getLatestUploadId(sb) {
-      const { data } = await sb.from('uploads').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
-      return data?.id || null
+      const { data, error } = await sb.from('uploads').select('id,filename,created_at').limit(500)
+      if (error) throw error
+      return sortUploadsNewestFirst(data)[0]?.id || null
     }
 
     async function resolveUploadId(sb, requestedId) {
