@@ -109,10 +109,10 @@ function MedicineDetailDialog({ record, open, onOpenChange, authedFetch }) {
             ) : history.length === 0 ? (
               <p className="text-muted-foreground p-4">لا يوجد سجل آخر.</p>
             ) : (
-              <div className="rounded-lg border overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted text-muted-foreground"><tr><th className="p-2 text-right">ID</th><th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">المخزن</th><th className="p-2 text-right">الفاتورة</th><th className="p-2 text-right">الكمية</th><th className="p-2 text-right">سعر الوحدة</th><th className="p-2 text-right">السعر الكلي</th><th className="p-2 text-right">الانتهاء</th></tr></thead>
-                  <tbody>{history.map((h) => (<tr key={h.id} className="border-t hover:bg-muted/30"><td className="p-2 num font-medium">{h.source_id || '—'}</td><td className="p-2 num">{formatDate(h.invoice_date)}</td><td className="p-2">{h.warehouse || '—'}</td><td className="p-2 num">{h.invoice_number || '—'}</td><td className="p-2 num">{formatNumber(h.quantity)}</td><td className="p-2 num">{formatNumber(h.unit_price)}</td><td className="p-2 num">{formatNumber(h.total_price)}</td><td className="p-2 num">{h.expiry_raw || formatDate(h.expiry_date)}</td></tr>))}</tbody>
+              <div className="rounded-lg border overflow-x-auto" dir="rtl">
+                <table className="w-full min-w-[900px] text-sm text-right">
+                  <thead className="bg-muted text-muted-foreground"><tr><th className="p-2 whitespace-nowrap">اسم الدواء</th><th className="p-2 whitespace-nowrap">رقم الفاتورة</th><th className="p-2 whitespace-nowrap">المخزن</th><th className="p-2 whitespace-nowrap">تاريخ الفاتورة</th><th className="p-2 whitespace-nowrap">الكمية</th><th className="p-2 whitespace-nowrap">سعر الوحدة</th><th className="p-2 whitespace-nowrap">السعر الكلي</th><th className="p-2 whitespace-nowrap">الانتهاء</th><th className="p-2 whitespace-nowrap">ID</th></tr></thead>
+                  <tbody>{history.map((h) => (<tr key={h.id} className="border-t hover:bg-muted/30"><td className="p-2 font-semibold whitespace-nowrap">{h.name || record.name || '—'}</td><td className="p-2 num whitespace-nowrap">{h.invoice_number || '—'}</td><td className="p-2 whitespace-nowrap">{h.warehouse || '—'}</td><td className="p-2 num whitespace-nowrap">{formatDate(h.invoice_date)}</td><td className="p-2 num whitespace-nowrap">{formatNumber(h.quantity)}</td><td className="p-2 num whitespace-nowrap">{formatNumber(h.unit_price)}</td><td className="p-2 num whitespace-nowrap">{formatNumber(h.total_price)}</td><td className="p-2 num whitespace-nowrap">{h.expiry_raw || formatDate(h.expiry_date)}</td><td className="p-2 num font-medium whitespace-nowrap">{h.source_id || '—'}</td></tr>))}</tbody>
                 </table>
               </div>
             )}

@@ -306,7 +306,20 @@ async function handle(request, { params }) {
         .order('invoice_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }).limit(500)
       if (error) throw error
-      return cors(NextResponse.json(data || []))
+      // The same source sheet may be uploaded more than once. Keep the database
+      // untouched and hide identical purchase rows only in the history response.
+      const seen = new Set()
+      const history = (data || []).filter((row) => {
+        const purchaseKey = [
+          row.name, row.source_id, row.invoice_number, row.invoice_date,
+          row.warehouse, row.quantity, row.unit_price, row.total_price,
+          row.expiry_raw || row.expiry_date,
+        ].map(value => String(value ?? '').trim().toLowerCase()).join('|')
+        if (seen.has(purchaseKey)) return false
+        seen.add(purchaseKey)
+        return true
+      })
+      return cors(NextResponse.json(history))
     }
 
     // -------- USERS LIST (admin only) --------
