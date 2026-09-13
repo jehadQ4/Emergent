@@ -91,7 +91,7 @@ export default function InventorySheetTab({ authedFetch }) {
     return medicines.filter((medicine) => {
       const name = normalizeText(medicine["اسم الدواء"]);
       const category = normalizeText(medicine["التصنيف"]);
-      const matchesSearch = !search || name.includes(search) || category.includes(search);
+      const matchesSearch = !search || smartTextMatch(search, [name, category, medicine["رمز الدواء"]]);
       const quantity = toNumber(medicine["الكمية"]);
       const minimum = medicine["الحد الأدنى"] === undefined || medicine["الحد الأدنى"] === ""
         ? 20 : toNumber(medicine["الحد الأدنى"]);
@@ -470,7 +470,7 @@ export default function InventorySheetTab({ authedFetch }) {
             onChange={(event) =>
               setSearchTerm(event.target.value)
             }
-            placeholder="ابحث باسم الدواء أو التصنيف..."
+            placeholder="بحث ذكي: الاسم، التصنيف أو الرمز..."
           />
 
           <span className="resultCount">
@@ -580,19 +580,19 @@ export default function InventorySheetTab({ authedFetch }) {
 
                   return (
                     <tr key={`${medicineKey}-${index}`}>
-                      <td>
+                      <td data-label="الرمز">
                         {medicine["رمز الدواء"] || "—"}
                       </td>
 
-                      <td className="medicineName">
+                      <td data-label="اسم الدواء" className="medicineName">
                         {drugName}
                       </td>
 
-                      <td>
+                      <td data-label="التصنيف">
                         {medicine["التصنيف"] || "غير محدد"}
                       </td>
 
-                      <td
+                      <td data-label="الكمية"
                         className={
                           stockIsLow
                             ? "lowQuantity"
@@ -602,13 +602,13 @@ export default function InventorySheetTab({ authedFetch }) {
                         {quantity}
                       </td>
 
-                      <td>{minimumQuantity}</td>
+                      <td data-label="الحد الأدنى">{minimumQuantity}</td>
 
-                      <td>{formatNumber(price)} د.ع</td>
+                      <td data-label="السعر">{formatNumber(price)} د.ع</td>
 
-                      <td>{formatDate(expiryDate)}</td>
+                      <td data-label="تاريخ الانتهاء">{formatDate(expiryDate)}</td>
 
-                      <td>
+                      <td data-label="التنبيهات">
                         <div className="badges">
                           {stockIsLow && (
                             <span className="badge lowBadge">
@@ -637,7 +637,7 @@ export default function InventorySheetTab({ authedFetch }) {
                         </div>
                       </td>
 
-                      <td>
+                      <td data-label="الكمية المطلوبة">
                         <input
                           className="quantityInput"
                           type="number"
@@ -654,7 +654,7 @@ export default function InventorySheetTab({ authedFetch }) {
                         />
                       </td>
 
-                      <td>
+                      <td data-label="الإجراءات">
                         <div className="actionButtons">
                           <button
                             type="button"
@@ -1209,9 +1209,34 @@ export default function InventorySheetTab({ authedFetch }) {
 
         @media (max-width: 700px) {
           .statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .page { padding: 12px 0; }
+          .container { padding: 0 10px; }
+          .header { align-items: stretch; }
+          .header h1 { font-size: 20px; }
+          .headerButtons { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+          .headerButtons button { padding: 11px 7px; font-size: 13px; }
+          .statBox { padding: 12px; }
+          .statBox strong { font-size: 18px; }
           .searchSection {
             flex-direction: column;
           }
+
+          .toolsRow { align-items: stretch; }
+          .filterButtons { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
+          .exportButtons { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+          .filterButton, .excelButton, .pdfButton { padding: 10px 5px; font-size: 12px; }
+
+          .tableWrapper { overflow: visible; box-shadow: none; background: transparent; }
+          .tableWrapper table, .tableWrapper tbody, .tableWrapper tr, .tableWrapper td { display: block; width: 100%; min-width: 0; }
+          .tableWrapper thead { display: none; }
+          .tableWrapper tr { margin-bottom: 12px; border: 1px solid #e5e2ec; border-radius: 12px; padding: 8px 12px; background: white !important; box-shadow: 0 3px 12px rgba(63, 55, 91, 0.08); }
+          .tableWrapper td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0eef4; text-align: left; }
+          .tableWrapper td:last-child { border-bottom: 0; }
+          .tableWrapper td::before { content: attr(data-label); color: #6c6877; font-size: 12px; font-weight: 600; text-align: right; }
+          .tableWrapper .medicineName { font-size: 16px; color: #4a426e; }
+          .tableWrapper .badges { align-items: flex-start; }
+          .tableWrapper .quantityInput { width: 90px; }
+          .tableWrapper .actionButtons { justify-content: flex-start; flex-wrap: wrap; }
 
           .formGrid {
             grid-template-columns: 1fr;
@@ -1237,7 +1262,44 @@ function getMedicineKey(medicine) {
 function normalizeText(value) {
   return String(value ?? "")
     .trim()
-    .toLocaleLowerCase("ar");
+    .toLocaleLowerCase("ar")
+    .normalize("NFKD")
+    .replace(/[\u064b-\u065f\u0670]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function smartTextMatch(normalizedQuery, values) {
+  const query = normalizeText(normalizedQuery);
+  if (!query) return true;
+  return values.some((value) => {
+    const text = normalizeText(value);
+    if (text.includes(query)) return true;
+    return text.split(" ").some((word) => {
+      if (Math.min(query.length, word.length) < 3) return false;
+      const distance = editDistance(query, word);
+      return distance <= Math.max(1, Math.floor(Math.max(query.length, word.length) * 0.3));
+    });
+  });
+}
+
+function editDistance(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const old = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = old;
+    }
+  }
+  return row[b.length];
 }
 
 function toNumber(value) {

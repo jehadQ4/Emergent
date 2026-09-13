@@ -77,6 +77,83 @@ function normalizeInventoryItem(row) {
   }
 }
 
+function normalizeSearchText(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u064b-\u065f\u0670]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/[ى]/g, 'ي')
+    .replace(/[ؤ]/g, 'و')
+    .replace(/[ئ]/g, 'ي')
+    .replace(/[ة]/g, 'ه')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+}
+
+function editDistance(a, b) {
+  if (!a) return b.length
+  if (!b) return a.length
+  const previous = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = previous[0]
+    previous[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const old = previous[j]
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
+      diagonal = old
+    }
+  }
+  return previous[b.length]
+}
+
+function medicineSearchScore(row, rawQuery) {
+  const query = normalizeSearchText(rawQuery)
+  if (!query) return 1
+  const fields = [row.name, row.scientific_name, row.company, row.barcode, row.source_id]
+    .map(normalizeSearchText).filter(Boolean)
+  let best = 0
+  for (const field of fields) {
+    if (field === query) best = Math.max(best, 100)
+    else if (field.startsWith(query)) best = Math.max(best, 90)
+    else if (field.includes(query)) best = Math.max(best, 80)
+    for (const word of field.split(' ')) {
+      const distance = editDistance(query, word)
+      const similarity = 1 - distance / Math.max(query.length, word.length, 1)
+      if (similarity >= 0.62) best = Math.max(best, Math.round(similarity * 70))
+    }
+  }
+  return best
+}
+
+async function fuzzySearchLatest(sb, latestId, q, limit) {
+  if (!q) {
+    const { data, error } = await sb.from('medicines').select('*').eq('upload_id', latestId)
+      .order('created_at', { ascending: false }).limit(limit)
+    if (error) throw error
+    return data || []
+  }
+
+  const { data: direct, error: directError } = await sb.from('medicines').select('*')
+    .eq('upload_id', latestId).ilike('search_text', `%${q.toLowerCase()}%`).limit(limit)
+  if (directError) throw directError
+  if (direct?.length) return direct.map(row => ({ ...row, _search_score: medicineSearchScore(row, q) || 80 }))
+
+  const candidates = []
+  const pageSize = 1000
+  for (let from = 0; from < 10000; from += pageSize) {
+    const { data: page, error } = await sb.from('medicines').select('*').eq('upload_id', latestId)
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    candidates.push(...(page || []))
+    if (!page || page.length < pageSize) break
+  }
+  return candidates.map(row => ({ ...row, _search_score: medicineSearchScore(row, q) }))
+    .filter(row => row._search_score > 0)
+    .sort((a, b) => b._search_score - a._search_score)
+    .slice(0, limit)
+}
+
 async function handle(request, { params }) {
   const { path = [] } = await params
   const route = `/${path.join('/')}`
@@ -237,12 +314,7 @@ async function handle(request, { params }) {
       const sb = supabaseAdmin()
       const latestId = await getLatestUploadId(sb)
       if (!latestId) return cors(NextResponse.json([]))
-      const { data, error } = await sb.from('medicines')
-        .select('name, scientific_name, company, source_id')
-        .eq('upload_id', latestId)
-        .ilike('search_text', `%${q.toLowerCase()}%`)
-        .limit(200)
-      if (error) throw error
+      const data = await fuzzySearchLatest(sb, latestId, q, 200)
       // Group by name in JS
       const map = new Map()
       for (const r of data || []) {
@@ -272,11 +344,8 @@ async function handle(request, { params }) {
       const sb = supabaseAdmin()
       const latestId = await getLatestUploadId(sb)
       if (!latestId) return cors(NextResponse.json([]))
-      let query = sb.from('medicines').select('*').eq('upload_id', latestId).order('created_at', { ascending: false }).limit(limit)
-      if (q) query = query.ilike('search_text', `%${q.toLowerCase()}%`)
-      const { data, error } = await query
-      if (error) throw error
-      return cors(NextResponse.json(data || []))
+      const data = await fuzzySearchLatest(sb, latestId, q, limit)
+      return cors(NextResponse.json(data))
     }
 
     // -------- DELETE AN UPLOAD (admin only) -------- 

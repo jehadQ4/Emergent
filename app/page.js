@@ -85,7 +85,7 @@ function MedicineDetailDialog({ record, open, onOpenChange, authedFetch }) {
   ]
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="w-[calc(100%-1rem)] max-w-4xl max-h-[95dvh] overflow-hidden flex flex-col p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle className="text-2xl flex items-center gap-3">
             <div className="size-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center"><Pill className="size-5" /></div>
@@ -163,9 +163,12 @@ function SearchTab({ authedFetch }) {
   }, [query, authedFetch])
 
   const sorted = useMemo(() => {
-    // Sort by source_id desc (as integer) so newest IDs (e.g., 152) appear first
     const arr = [...results]
     arr.sort((a, b) => {
+      if (query.trim()) {
+        const scoreDifference = (b._search_score || 0) - (a._search_score || 0)
+        if (scoreDifference) return scoreDifference
+      }
       const ai = parseInt(a.source_id, 10)
       const bi = parseInt(b.source_id, 10)
       const aValid = !isNaN(ai), bValid = !isNaN(bi)
@@ -176,7 +179,7 @@ function SearchTab({ authedFetch }) {
       return new Date(b.created_at) - new Date(a.created_at)
     })
     return arr.slice(0, 200)
-  }, [results])
+  }, [results, query])
 
   return (
     <div className="space-y-4">
@@ -213,7 +216,7 @@ function SearchTab({ authedFetch }) {
         )}
       </div>
       <div className="flex items-center justify-between text-sm text-muted-foreground px-1">
-        <span>{sorted.length > 0 ? <>عدد النتائج: <span className="num font-bold text-foreground">{sorted.length}</span> سجل (مرتبة من الأحدث)</> : 'لا توجد نتائج'}</span>
+        <span>{sorted.length > 0 ? <>عدد النتائج: <span className="num font-bold text-foreground">{sorted.length}</span> سجل ({query.trim() ? 'الأقرب لبحثك أولاً' : 'مرتبة من الأحدث'})</> : 'لا توجد نتائج'}</span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {sorted.map((r) => (
@@ -780,13 +783,13 @@ function App() {
           </div>
         </div>
       </header>
-      <main className="container mx-auto px-4 py-6">
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className={`grid ${isAdmin ? 'grid-cols-4 max-w-4xl' : 'grid-cols-1 max-w-xs'}`}>
-            <TabsTrigger value="search" className="gap-2"><Search className="size-4" /> بحث</TabsTrigger>
-            {isAdmin && <TabsTrigger value="admin" className="gap-2"><ShieldCheck className="size-4" /> رفع وإدارة</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="users" className="gap-2"><UsersIcon className="size-4" /> المستخدمون {pendingCount > 0 && <Badge className="bg-amber-500 hover:bg-amber-600 num text-[10px] px-1.5">{pendingCount}</Badge>}</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="inventory" className="gap-2"><Warehouse className="size-4" /> إدارة المخزن</TabsTrigger>}
+          <TabsList className={`grid h-auto w-full ${isAdmin ? 'grid-cols-2 sm:grid-cols-4 max-w-4xl' : 'grid-cols-1 max-w-xs'} gap-1`}>
+            <TabsTrigger value="search" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Search className="size-4" /> بحث</TabsTrigger>
+            {isAdmin && <TabsTrigger value="admin" className="gap-1.5 py-2.5 text-xs sm:text-sm"><ShieldCheck className="size-4" /> رفع وإدارة</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="users" className="gap-1.5 py-2.5 text-xs sm:text-sm"><UsersIcon className="size-4" /> المستخدمون {pendingCount > 0 && <Badge className="bg-amber-500 hover:bg-amber-600 num text-[10px] px-1.5">{pendingCount}</Badge>}</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="inventory" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Warehouse className="size-4" /> إدارة المخزن</TabsTrigger>}
           </TabsList>
           <TabsContent value="search"><SearchTab authedFetch={authedFetch} /></TabsContent>
           {isAdmin && <TabsContent value="admin"><AdminTab authedFetch={authedFetch} /></TabsContent>}
