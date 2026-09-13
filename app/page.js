@@ -109,11 +109,24 @@ function MedicineDetailDialog({ record, open, onOpenChange, authedFetch }) {
             ) : history.length === 0 ? (
               <p className="text-muted-foreground p-4">لا يوجد سجل آخر.</p>
             ) : (
-              <div className="rounded-lg border overflow-x-auto" dir="rtl">
-                <table className="w-full min-w-[900px] text-sm text-right">
-                  <thead className="bg-muted text-muted-foreground"><tr><th className="p-2 whitespace-nowrap">اسم الدواء</th><th className="p-2 whitespace-nowrap">رقم الفاتورة</th><th className="p-2 whitespace-nowrap">المخزن</th><th className="p-2 whitespace-nowrap">تاريخ الفاتورة</th><th className="p-2 whitespace-nowrap">الكمية</th><th className="p-2 whitespace-nowrap">سعر الوحدة</th><th className="p-2 whitespace-nowrap">السعر الكلي</th><th className="p-2 whitespace-nowrap">الانتهاء</th><th className="p-2 whitespace-nowrap">ID</th></tr></thead>
-                  <tbody>{history.map((h) => (<tr key={h.id} className="border-t hover:bg-muted/30"><td className="p-2 font-semibold whitespace-nowrap">{h.name || record.name || '—'}</td><td className="p-2 num whitespace-nowrap">{h.invoice_number || '—'}</td><td className="p-2 whitespace-nowrap">{h.warehouse || '—'}</td><td className="p-2 num whitespace-nowrap">{formatDate(h.invoice_date)}</td><td className="p-2 num whitespace-nowrap">{formatNumber(h.quantity)}</td><td className="p-2 num whitespace-nowrap">{formatNumber(h.unit_price)}</td><td className="p-2 num whitespace-nowrap">{formatNumber(h.total_price)}</td><td className="p-2 num whitespace-nowrap">{h.expiry_raw || formatDate(h.expiry_date)}</td><td className="p-2 num font-medium whitespace-nowrap">{h.source_id || '—'}</td></tr>))}</tbody>
-                </table>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {history.map((h) => (
+                  <div key={h.id} className="rounded-xl border bg-card p-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-2 border-b pb-2 mb-2">
+                      <p className="font-bold leading-tight">{h.name || record.name || '—'}</p>
+                      <Badge variant="outline" className="num shrink-0">ID: {h.source_id || '—'}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <HistoryField label="رقم الفاتورة" value={h.invoice_number} numeric />
+                      <HistoryField label="المخزن" value={h.warehouse} />
+                      <HistoryField label="تاريخ الفاتورة" value={formatDate(h.invoice_date)} numeric />
+                      <HistoryField label="الكمية" value={formatNumber(h.quantity)} numeric />
+                      <HistoryField label="سعر الوحدة" value={formatNumber(h.unit_price)} numeric />
+                      <HistoryField label="السعر الكلي" value={formatNumber(h.total_price)} numeric />
+                      <HistoryField label="الانتهاء" value={h.expiry_raw || formatDate(h.expiry_date)} numeric />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -121,6 +134,10 @@ function MedicineDetailDialog({ record, open, onOpenChange, authedFetch }) {
       </DialogContent>
     </Dialog>
   )
+}
+
+function HistoryField({ label, value, numeric = false }) {
+  return <div><p className="text-[11px] text-muted-foreground">{label}</p><p className={`font-medium ${numeric ? 'num' : ''}`}>{value || '—'}</p></div>
 }
 
 function SearchTab({ authedFetch }) {
@@ -131,36 +148,44 @@ function SearchTab({ authedFetch }) {
   const [selected, setSelected] = useState(null)
   const [open, setOpen] = useState(false)
   const [currentFile, setCurrentFile] = useState(null)
+  const [uploadedFiles, setUploadedFiles] = useState([])
   const debounceRef = useRef(null)
 
   // Load current upload info
   useEffect(() => {
     authedFetch('/api/uploads').then(r => r.json()).then(d => {
-      if (Array.isArray(d) && d.length > 0) setCurrentFile(d[0])
+      if (Array.isArray(d) && d.length > 0) {
+        setUploadedFiles(d)
+        const savedId = window.localStorage.getItem('pharmacy-search-upload-id')
+        setCurrentFile(d.find(file => file.id === savedId) || d[0])
+      }
     }).catch(() => {})
   }, [authedFetch])
 
   useEffect(() => {
+    if (!currentFile?.id) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     const q = query.trim()
     if (!q) {
       setSuggestions([])
-      authedFetch('/api/search?q=&limit=50').then(r => r.json()).then(d => setResults(Array.isArray(d) ? d : []))
+      authedFetch(`/api/search?q=&limit=24&upload_id=${encodeURIComponent(currentFile.id)}`).then(r => r.json()).then(d => setResults(Array.isArray(d) ? d : []))
       return
     }
     debounceRef.current = setTimeout(async () => {
       try {
-        const [sRes, rRes] = await Promise.all([
-          authedFetch(`/api/suggest?q=${encodeURIComponent(q)}`),
-          authedFetch(`/api/search?q=${encodeURIComponent(q)}&limit=500`),
-        ])
-        const sData = await sRes.json()
+        const rRes = await authedFetch(`/api/search?q=${encodeURIComponent(q)}&limit=100&upload_id=${encodeURIComponent(currentFile.id)}`)
         const rData = await rRes.json()
-        setSuggestions(Array.isArray(sData) ? sData : [])
-        setResults(Array.isArray(rData) ? rData : [])
+        const rows = Array.isArray(rData) ? rData : []
+        const names = new Map()
+        rows.forEach(row => {
+          if (!names.has(row.name)) names.set(row.name, { name: row.name, company: row.company, scientific_name: row.scientific_name, hits: 0 })
+          names.get(row.name).hits += 1
+        })
+        setSuggestions(Array.from(names.values()).slice(0, 8))
+        setResults(rows)
       } catch (e) { console.error(e) }
-    }, 180)
-  }, [query, authedFetch])
+    }, 300)
+  }, [query, authedFetch, currentFile?.id])
 
   const sorted = useMemo(() => {
     const arr = [...results]
@@ -190,6 +215,19 @@ function SearchTab({ authedFetch }) {
           <span className="font-semibold text-emerald-900">{currentFile.filename}</span>
           <Badge variant="outline" className="border-emerald-300 num text-emerald-800">{formatNumber(currentFile.rows_count)} سجل</Badge>
           <span className="text-xs text-emerald-700">رُفع في {formatDate(currentFile.created_at)}</span>
+          {uploadedFiles.length > 1 && (
+            <Select value={currentFile.id} onValueChange={id => {
+              const selectedFile = uploadedFiles.find(file => file.id === id)
+              if (selectedFile) {
+                setCurrentFile(selectedFile)
+                setQuery(''); setResults([]); setSuggestions([])
+                window.localStorage.setItem('pharmacy-search-upload-id', id)
+              }
+            }}>
+              <SelectTrigger className="w-full sm:w-[240px] h-9 mr-auto bg-white"><SelectValue placeholder="اختر ملف البحث" /></SelectTrigger>
+              <SelectContent>{uploadedFiles.map(file => <SelectItem key={file.id} value={file.id}>{file.filename} — {formatNumber(file.rows_count)} سجل</SelectItem>)}</SelectContent>
+            </Select>
+          )}
         </div>
       )}
       <div className="relative">

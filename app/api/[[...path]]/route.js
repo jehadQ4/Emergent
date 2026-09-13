@@ -142,16 +142,24 @@ async function fuzzySearchLatest(sb, latestId, q, limit) {
   const candidates = []
   const pageSize = 1000
   for (let from = 0; from < 10000; from += pageSize) {
-    const { data: page, error } = await sb.from('medicines').select('*').eq('upload_id', latestId)
+    const { data: page, error } = await sb.from('medicines')
+      .select('id,name,scientific_name,company,barcode,source_id').eq('upload_id', latestId)
       .range(from, from + pageSize - 1)
     if (error) throw error
     candidates.push(...(page || []))
     if (!page || page.length < pageSize) break
   }
-  return candidates.map(row => ({ ...row, _search_score: medicineSearchScore(row, q) }))
+  const matches = candidates.map(row => ({ ...row, _search_score: medicineSearchScore(row, q) }))
     .filter(row => row._search_score > 0)
     .sort((a, b) => b._search_score - a._search_score)
     .slice(0, limit)
+  if (!matches.length) return []
+  const scoreById = new Map(matches.map(row => [row.id, row._search_score]))
+  const { data: fullRows, error: fullError } = await sb.from('medicines').select('*')
+    .in('id', matches.map(row => row.id))
+  if (fullError) throw fullError
+  return (fullRows || []).map(row => ({ ...row, _search_score: scoreById.get(row.id) || 0 }))
+    .sort((a, b) => b._search_score - a._search_score)
 }
 
 async function handle(request, { params }) {
@@ -304,6 +312,14 @@ async function handle(request, { params }) {
       return data?.id || null
     }
 
+    async function resolveUploadId(sb, requestedId) {
+      if (requestedId) {
+        const { data } = await sb.from('uploads').select('id').eq('id', requestedId).maybeSingle()
+        if (data?.id) return data.id
+      }
+      return getLatestUploadId(sb)
+    }
+
     // -------- LIVE SUGGESTIONS (auth required) - filters to LATEST UPLOAD ONLY --------
     if (route === '/suggest' && method === 'GET') {
       const profile = await getUserProfile(request)
@@ -312,7 +328,7 @@ async function handle(request, { params }) {
       const q = (url.searchParams.get('q') || '').trim()
       if (!q) return cors(NextResponse.json([]))
       const sb = supabaseAdmin()
-      const latestId = await getLatestUploadId(sb)
+      const latestId = await resolveUploadId(sb, url.searchParams.get('upload_id'))
       if (!latestId) return cors(NextResponse.json([]))
       const data = await fuzzySearchLatest(sb, latestId, q, 200)
       // Group by name in JS
@@ -342,7 +358,7 @@ async function handle(request, { params }) {
       const q = (url.searchParams.get('q') || '').trim()
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '200'), 2000)
       const sb = supabaseAdmin()
-      const latestId = await getLatestUploadId(sb)
+      const latestId = await resolveUploadId(sb, url.searchParams.get('upload_id'))
       if (!latestId) return cors(NextResponse.json([]))
       const data = await fuzzySearchLatest(sb, latestId, q, limit)
       return cors(NextResponse.json(data))
