@@ -162,6 +162,7 @@ function SearchTab({ authedFetch }) {
   const [selected, setSelected] = useState(null)
   const [open, setOpen] = useState(false)
   const [currentFile, setCurrentFile] = useState(null)
+  const [currentSourceId, setCurrentSourceId] = useState(null)
   const debounceRef = useRef(null)
   const requestRef = useRef(0)
   const abortRef = useRef(null)
@@ -187,10 +188,11 @@ function SearchTab({ authedFetch }) {
     const requestId = ++requestRef.current
     const cacheKey = `${currentFile.id}:${q.toLocaleLowerCase('ar')}`
 
-    const applyResults = (rows) => {
+    const applyResults = (rows, sourceId = null) => {
       if (requestId !== requestRef.current) return
       const data = Array.isArray(rows) ? rows : []
       setResults(data)
+      if (sourceId) setCurrentSourceId(sourceId)
 
       if (!q) {
         initialResultsRef.current = data
@@ -218,7 +220,7 @@ function SearchTab({ authedFetch }) {
 
     const cached = searchCacheRef.current.get(cacheKey)
     if (cached) {
-      applyResults(cached)
+      applyResults(cached.rows, cached.sourceId)
       return
     }
 
@@ -231,11 +233,12 @@ function SearchTab({ authedFetch }) {
         if (!rRes.ok) throw new Error('تعذر إكمال البحث')
         const rData = await rRes.json()
         const rows = Array.isArray(rData) ? rData : []
-        searchCacheRef.current.set(cacheKey, rows)
+        const sourceId = rRes.headers.get('X-Latest-Source-Id') || rows[0]?.source_id || null
+        searchCacheRef.current.set(cacheKey, { rows, sourceId })
         if (searchCacheRef.current.size > 30) {
           searchCacheRef.current.delete(searchCacheRef.current.keys().next().value)
         }
-        applyResults(rows)
+        applyResults(rows, sourceId)
       } catch (e) {
         if (e.name !== 'AbortError') console.error(e)
       }
@@ -274,6 +277,7 @@ function SearchTab({ authedFetch }) {
           <span className="text-emerald-900">يبحث النظام في الملف:</span>
           <span className="font-semibold text-emerald-900">{currentFile.filename}</span>
           <Badge variant="outline" className="border-emerald-300 num text-emerald-800">{formatNumber(currentFile.rows_count)} سجل</Badge>
+          {currentSourceId && <Badge className="bg-emerald-700 num">آخر إضافة: {currentSourceId}</Badge>}
           <span className="text-xs text-emerald-700">رُفع في {formatDate(currentFile.created_at)}</span>
         </div>
       )}
@@ -304,8 +308,9 @@ function SearchTab({ authedFetch }) {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground px-1">
-        <span>{sorted.length > 0 ? <>عدد النتائج: <span className="num font-bold text-foreground">{sorted.length}</span> سجل ({query.trim() ? 'الأقرب لبحثك أولاً' : 'مرتبة من الأحدث'})</> : 'لا توجد نتائج'}</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground px-1">
+        <span>{sorted.length > 0 ? <>عدد النتائج: <span className="num font-bold text-foreground">{sorted.length}</span> سجل ({query.trim() ? 'الأقرب لبحثك أولاً' : 'أحدث ملف مضاف'})</> : 'لا توجد نتائج'}</span>
+        {currentSourceId && <span className="font-medium">نتائج الملف <Badge variant="secondary" className="num mr-1">{currentSourceId}</Badge></span>}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {sorted.map((r) => (

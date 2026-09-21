@@ -92,7 +92,9 @@ function sortUploadsNewestFirst(rows) {
 }
 
 const LATEST_UPLOAD_CACHE_TTL = 5 * 60 * 1000
+const LATEST_SOURCE_CACHE_TTL = 5 * 60 * 1000
 let latestUploadCache = null
+const latestSourceCache = new Map()
 
 function cacheLatestUpload(upload) {
   latestUploadCache = upload?.id
@@ -116,6 +118,49 @@ async function resolveUploadId(sb, requestedId) {
 
   const { data } = await sb.from('uploads').select('id').eq('id', requestedId).maybeSingle()
   return data?.id || latestId
+}
+
+async function getLatestSourceId(sb, uploadId) {
+  const cached = latestSourceCache.get(uploadId)
+  if (cached?.expiresAt > Date.now()) return cached.sourceId
+
+  // Fast path after running supabase_search_performance.sql.
+  const { data: rpcValue, error: rpcError } = await sb.rpc('latest_numeric_source_id', {
+    p_upload_id: uploadId,
+  })
+  let sourceId = !rpcError && rpcValue !== null && rpcValue !== undefined
+    ? String(rpcValue)
+    : null
+
+  // Safe fallback for servers where the SQL migration has not been run yet.
+  if (!sourceId) {
+    const { count, error: countError } = await sb.from('medicines')
+      .select('source_id', { count: 'exact', head: true })
+      .eq('upload_id', uploadId)
+    if (countError) throw countError
+
+    const pageSize = 1000
+    const pages = Math.ceil((count || 0) / pageSize)
+    const responses = await Promise.all(Array.from({ length: pages }, (_, page) =>
+      sb.from('medicines').select('source_id').eq('upload_id', uploadId)
+        .range(page * pageSize, (page + 1) * pageSize - 1)
+    ))
+    let highest = -1
+    for (const response of responses) {
+      if (response.error) throw response.error
+      for (const row of response.data || []) {
+        const numericId = Number.parseInt(String(row.source_id || '').trim(), 10)
+        if (Number.isFinite(numericId) && numericId > highest) highest = numericId
+      }
+    }
+    sourceId = highest >= 0 ? String(highest) : null
+  }
+
+  latestSourceCache.set(uploadId, {
+    sourceId,
+    expiresAt: Date.now() + LATEST_SOURCE_CACHE_TTL,
+  })
+  return sourceId
 }
 
 function normalizeSearchText(value) {
@@ -172,16 +217,20 @@ const SEARCH_RESULT_COLUMNS = [
   'quantity', 'unit_price', 'invoice_date', 'created_at', 'barcode',
 ].join(',')
 
-async function searchLatest(sb, latestId, q, limit) {
+async function searchLatest(sb, latestId, latestSourceId, q, limit) {
+  const currentSource = (query) => latestSourceId ? query.eq('source_id', latestSourceId) : query
+
   if (!q) {
-    const { data, error } = await sb.from('medicines').select(SEARCH_RESULT_COLUMNS).eq('upload_id', latestId)
+    const baseQuery = sb.from('medicines').select(SEARCH_RESULT_COLUMNS).eq('upload_id', latestId)
+    const { data, error } = await currentSource(baseQuery)
       .order('created_at', { ascending: false }).limit(limit)
     if (error) throw error
     return data || []
   }
 
-  const { data: direct, error: directError } = await sb.from('medicines').select(SEARCH_RESULT_COLUMNS)
-    .eq('upload_id', latestId).ilike('search_text', `%${q.toLowerCase()}%`).limit(limit)
+  const baseQuery = sb.from('medicines').select(SEARCH_RESULT_COLUMNS).eq('upload_id', latestId)
+  const { data: direct, error: directError } = await currentSource(baseQuery)
+    .ilike('search_text', `%${q.toLowerCase()}%`).limit(limit)
   if (directError) throw directError
   return (direct || []).map(row => ({ ...row, _search_score: medicineSearchScore(row, q) || 80 }))
     .sort((a, b) => b._search_score - a._search_score)
@@ -332,6 +381,7 @@ async function handle(request, { params }) {
 
       // Re-resolve by the numeric filename (for example 190, 191) on the next request.
       latestUploadCache = null
+      latestSourceCache.clear()
       return cors(NextResponse.json({ ok: true, upload_id: uploadRow.id, filename: file.name, rows_inserted: inserted, headers, mapped }))
     }
 
@@ -345,7 +395,8 @@ async function handle(request, { params }) {
       const sb = supabaseAdmin()
       const latestId = await resolveUploadId(sb, url.searchParams.get('upload_id'))
       if (!latestId) return cors(NextResponse.json([]))
-      const data = await searchLatest(sb, latestId, q, 100)
+      const latestSourceId = await getLatestSourceId(sb, latestId)
+      const data = await searchLatest(sb, latestId, latestSourceId, q, 100)
       // Group by name in JS
       const map = new Map()
       for (const r of data || []) {
@@ -375,8 +426,11 @@ async function handle(request, { params }) {
       const sb = supabaseAdmin()
       const latestId = await resolveUploadId(sb, url.searchParams.get('upload_id'))
       if (!latestId) return cors(NextResponse.json([]))
-      const data = await searchLatest(sb, latestId, q, limit)
-      return cors(NextResponse.json(data))
+      const latestSourceId = await getLatestSourceId(sb, latestId)
+      const data = await searchLatest(sb, latestId, latestSourceId, q, limit)
+      const response = NextResponse.json(data)
+      if (latestSourceId) response.headers.set('X-Latest-Source-Id', latestSourceId)
+      return cors(response)
     }
 
     // -------- ONE MEDICINE (auth required) - full details loaded only when opened --------
@@ -403,6 +457,7 @@ async function handle(request, { params }) {
       const { error: duErr } = await sb.from('uploads').delete().eq('id', id)
       if (duErr) return cors(NextResponse.json({ error: duErr.message }, { status: 400 }))
       latestUploadCache = null
+      latestSourceCache.delete(id)
       return cors(NextResponse.json({ ok: true }))
     }
 
