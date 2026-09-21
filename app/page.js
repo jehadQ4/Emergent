@@ -211,7 +211,7 @@ function SearchTab({ authedFetch }) {
       setSuggestions(Array.from(names.values()).slice(0, 8))
     }
 
-    // A single character does not start a server request. Keep file 190 contents visible.
+    // A single character does not start a server request. Keep the latest file contents visible.
     if (q.length === 1) {
       setSuggestions([])
       setResults(initialResultsRef.current)
@@ -309,8 +309,9 @@ function SearchTab({ authedFetch }) {
         )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground px-1">
-        <span>{sorted.length > 0 ? <>عدد النتائج: <span className="num font-bold text-foreground">{sorted.length}</span> سجل ({query.trim() ? 'الأقرب لبحثك أولاً' : 'أحدث ملف مضاف'})</> : 'لا توجد نتائج'}</span>
-        {currentSourceId && <span className="font-medium">نتائج الملف <Badge variant="secondary" className="num mr-1">{currentSourceId}</Badge></span>}
+        <span>{sorted.length > 0 ? <>عدد النتائج: <span className="num font-bold text-foreground">{sorted.length}</span> سجل ({query.trim() ? 'بحث في جميع الملفات' : 'محتويات أحدث ملف'})</> : 'لا توجد نتائج'}</span>
+        {currentSourceId && !query.trim() && <span className="font-medium">محتويات الملف <Badge variant="secondary" className="num mr-1">{currentSourceId}</Badge></span>}
+        {query.trim() && <Badge variant="outline">البحث في كل الملفات</Badge>}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {sorted.map((r) => (

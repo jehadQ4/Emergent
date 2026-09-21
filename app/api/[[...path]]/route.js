@@ -220,6 +220,7 @@ const SEARCH_RESULT_COLUMNS = [
 async function searchLatest(sb, latestId, latestSourceId, q, limit) {
   const currentSource = (query) => latestSourceId ? query.eq('source_id', latestSourceId) : query
 
+  // With an empty search, show only the newest source file (for example 192).
   if (!q) {
     const baseQuery = sb.from('medicines').select(SEARCH_RESULT_COLUMNS).eq('upload_id', latestId)
     const { data, error } = await currentSource(baseQuery)
@@ -228,12 +229,19 @@ async function searchLatest(sb, latestId, latestSourceId, q, limit) {
     return data || []
   }
 
+  // When the user searches, search the whole uploaded dataset, not only file 192.
   const baseQuery = sb.from('medicines').select(SEARCH_RESULT_COLUMNS).eq('upload_id', latestId)
-  const { data: direct, error: directError } = await currentSource(baseQuery)
-    .ilike('search_text', `%${q.toLowerCase()}%`).limit(limit)
+  const candidateLimit = Math.min(Math.max(limit * 5, 100), 500)
+  const { data: direct, error: directError } = await baseQuery
+    .ilike('search_text', `%${q.toLowerCase()}%`).limit(candidateLimit)
   if (directError) throw directError
   return (direct || []).map(row => ({ ...row, _search_score: medicineSearchScore(row, q) || 80 }))
-    .sort((a, b) => b._search_score - a._search_score)
+    .sort((a, b) => {
+      const scoreDifference = b._search_score - a._search_score
+      if (scoreDifference) return scoreDifference
+      return (parseInt(b.source_id, 10) || 0) - (parseInt(a.source_id, 10) || 0)
+    })
+    .slice(0, limit)
 }
 
 async function handle(request, { params }) {
