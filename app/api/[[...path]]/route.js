@@ -91,6 +91,33 @@ function sortUploadsNewestFirst(rows) {
   })
 }
 
+const LATEST_UPLOAD_CACHE_TTL = 5 * 60 * 1000
+let latestUploadCache = null
+
+function cacheLatestUpload(upload) {
+  latestUploadCache = upload?.id
+    ? { id: upload.id, filename: upload.filename, expiresAt: Date.now() + LATEST_UPLOAD_CACHE_TTL }
+    : null
+}
+
+async function getLatestUploadId(sb) {
+  if (latestUploadCache?.expiresAt > Date.now()) return latestUploadCache.id
+
+  const { data, error } = await sb.from('uploads').select('id,filename,created_at').limit(500)
+  if (error) throw error
+  const latest = sortUploadsNewestFirst(data)[0] || null
+  cacheLatestUpload(latest)
+  return latest?.id || null
+}
+
+async function resolveUploadId(sb, requestedId) {
+  const latestId = await getLatestUploadId(sb)
+  if (!requestedId || requestedId === latestId) return latestId
+
+  const { data } = await sb.from('uploads').select('id').eq('id', requestedId).maybeSingle()
+  return data?.id || latestId
+}
+
 function normalizeSearchText(value) {
   return String(value ?? '')
     .toLowerCase()
@@ -140,39 +167,23 @@ function medicineSearchScore(row, rawQuery) {
   return best
 }
 
-async function fuzzySearchLatest(sb, latestId, q, limit) {
+const SEARCH_RESULT_COLUMNS = [
+  'id', 'source_id', 'name', 'scientific_name', 'company', 'warehouse',
+  'quantity', 'unit_price', 'invoice_date', 'created_at', 'barcode',
+].join(',')
+
+async function searchLatest(sb, latestId, q, limit) {
   if (!q) {
-    const { data, error } = await sb.from('medicines').select('*').eq('upload_id', latestId)
+    const { data, error } = await sb.from('medicines').select(SEARCH_RESULT_COLUMNS).eq('upload_id', latestId)
       .order('created_at', { ascending: false }).limit(limit)
     if (error) throw error
     return data || []
   }
 
-  const { data: direct, error: directError } = await sb.from('medicines').select('*')
+  const { data: direct, error: directError } = await sb.from('medicines').select(SEARCH_RESULT_COLUMNS)
     .eq('upload_id', latestId).ilike('search_text', `%${q.toLowerCase()}%`).limit(limit)
   if (directError) throw directError
-  if (direct?.length) return direct.map(row => ({ ...row, _search_score: medicineSearchScore(row, q) || 80 }))
-
-  const candidates = []
-  const pageSize = 1000
-  for (let from = 0; from < 10000; from += pageSize) {
-    const { data: page, error } = await sb.from('medicines')
-      .select('id,name,scientific_name,company,barcode,source_id').eq('upload_id', latestId)
-      .range(from, from + pageSize - 1)
-    if (error) throw error
-    candidates.push(...(page || []))
-    if (!page || page.length < pageSize) break
-  }
-  const matches = candidates.map(row => ({ ...row, _search_score: medicineSearchScore(row, q) }))
-    .filter(row => row._search_score > 0)
-    .sort((a, b) => b._search_score - a._search_score)
-    .slice(0, limit)
-  if (!matches.length) return []
-  const scoreById = new Map(matches.map(row => [row.id, row._search_score]))
-  const { data: fullRows, error: fullError } = await sb.from('medicines').select('*')
-    .in('id', matches.map(row => row.id))
-  if (fullError) throw fullError
-  return (fullRows || []).map(row => ({ ...row, _search_score: scoreById.get(row.id) || 0 }))
+  return (direct || []).map(row => ({ ...row, _search_score: medicineSearchScore(row, q) || 80 }))
     .sort((a, b) => b._search_score - a._search_score)
 }
 
@@ -263,7 +274,9 @@ async function handle(request, { params }) {
       const sb = supabaseAdmin()
       const { data, error } = await sb.from('uploads').select('*').limit(500)
       if (error) throw error
-      return cors(NextResponse.json(sortUploadsNewestFirst(data)))
+      const sortedUploads = sortUploadsNewestFirst(data)
+      cacheLatestUpload(sortedUploads[0])
+      return cors(NextResponse.json(sortedUploads))
     }
 
     // -------- UPLOAD FILE (ADMIN ONLY) --------
@@ -317,22 +330,9 @@ async function handle(request, { params }) {
         inserted += batch.length
       }
 
+      // Re-resolve by the numeric filename (for example 190, 191) on the next request.
+      latestUploadCache = null
       return cors(NextResponse.json({ ok: true, upload_id: uploadRow.id, filename: file.name, rows_inserted: inserted, headers, mapped }))
-    }
-
-    // Helper to get latest upload id (for "current dataset" filtering)
-    async function getLatestUploadId(sb) {
-      const { data, error } = await sb.from('uploads').select('id,filename,created_at').limit(500)
-      if (error) throw error
-      return sortUploadsNewestFirst(data)[0]?.id || null
-    }
-
-    async function resolveUploadId(sb, requestedId) {
-      if (requestedId) {
-        const { data } = await sb.from('uploads').select('id').eq('id', requestedId).maybeSingle()
-        if (data?.id) return data.id
-      }
-      return getLatestUploadId(sb)
     }
 
     // -------- LIVE SUGGESTIONS (auth required) - filters to LATEST UPLOAD ONLY --------
@@ -345,7 +345,7 @@ async function handle(request, { params }) {
       const sb = supabaseAdmin()
       const latestId = await resolveUploadId(sb, url.searchParams.get('upload_id'))
       if (!latestId) return cors(NextResponse.json([]))
-      const data = await fuzzySearchLatest(sb, latestId, q, 200)
+      const data = await searchLatest(sb, latestId, q, 100)
       // Group by name in JS
       const map = new Map()
       for (const r of data || []) {
@@ -371,11 +371,23 @@ async function handle(request, { params }) {
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
       const url = new URL(request.url)
       const q = (url.searchParams.get('q') || '').trim()
-      const limit = Math.min(parseInt(url.searchParams.get('limit') || '200'), 2000)
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 100)
       const sb = supabaseAdmin()
       const latestId = await resolveUploadId(sb, url.searchParams.get('upload_id'))
       if (!latestId) return cors(NextResponse.json([]))
-      const data = await fuzzySearchLatest(sb, latestId, q, limit)
+      const data = await searchLatest(sb, latestId, q, limit)
+      return cors(NextResponse.json(data))
+    }
+
+    // -------- ONE MEDICINE (auth required) - full details loaded only when opened --------
+    if (route.startsWith('/medicine/') && method === 'GET') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      const id = route.split('/')[2]
+      const sb = supabaseAdmin()
+      const { data, error } = await sb.from('medicines').select('*').eq('id', id).maybeSingle()
+      if (error) throw error
+      if (!data) return cors(NextResponse.json({ error: 'not found' }, { status: 404 }))
       return cors(NextResponse.json(data))
     }
 
@@ -390,6 +402,7 @@ async function handle(request, { params }) {
       if (dmErr) return cors(NextResponse.json({ error: dmErr.message }, { status: 400 }))
       const { error: duErr } = await sb.from('uploads').delete().eq('id', id)
       if (duErr) return cors(NextResponse.json({ error: duErr.message }, { status: 400 }))
+      latestUploadCache = null
       return cors(NextResponse.json({ ok: true }))
     }
 

@@ -52,36 +52,50 @@ function StatCard({ icon: Icon, label, value, accent }) {
 
 function MedicineDetailDialog({ record, open, onOpenChange, authedFetch }) {
   const [history, setHistory] = useState([])
+  const [details, setDetails] = useState(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!open || !record?.name) return
+    let cancelled = false
     setLoading(true)
-    authedFetch(`/api/history?name=${encodeURIComponent(record.name)}`)
-      .then(r => r.json()).then(d => setHistory(Array.isArray(d) ? d : []))
-      .catch(() => setHistory([])).finally(() => setLoading(false))
-  }, [open, record?.name, authedFetch])
+    setDetails(record)
+    Promise.all([
+      authedFetch(`/api/medicine/${encodeURIComponent(record.id)}`).then(r => r.ok ? r.json() : record),
+      authedFetch(`/api/history?name=${encodeURIComponent(record.name)}`).then(r => r.json()),
+    ]).then(([detailData, historyData]) => {
+      if (cancelled) return
+      setDetails(detailData || record)
+      setHistory(Array.isArray(historyData) ? historyData : [])
+    }).catch(() => {
+      if (!cancelled) setHistory([])
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [open, record?.id, record?.name, authedFetch])
 
   if (!record) return null
+  const displayRecord = details || record
   const fields = [
-    { label: 'ID', value: record.source_id, icon: Hash },
-    { label: 'الاسم العلمي', value: record.scientific_name, icon: Pill },
-    { label: 'الشركة', value: record.company, icon: Building2 },
-    { label: 'المخزن', value: record.warehouse, icon: Database },
-    { label: 'رقم الفاتورة', value: record.invoice_number, icon: Hash },
-    { label: 'تاريخ الفاتورة', value: formatDate(record.invoice_date), icon: Calendar },
-    { label: 'الكمية', value: formatNumber(record.quantity), icon: Package },
-    { label: 'سعر الشراء', value: formatNumber(record.unit_price), icon: DollarSign },
-    { label: 'السعر الكلي', value: formatNumber(record.total_price), icon: DollarSign },
-    { label: 'السعر الأصلي', value: formatNumber(record.original_price), icon: DollarSign },
-    { label: 'سعر البيع', value: formatNumber(record.selling_price), icon: DollarSign },
-    { label: 'هدية', value: formatNumber(record.gift), icon: Package },
-    { label: 'هدية مندوب', value: formatNumber(record.rep_gift), icon: Package },
-    { label: 'رقم الدفعة', value: record.batch_number, icon: Hash },
-    { label: 'تاريخ الانتهاء', value: record.expiry_raw || formatDate(record.expiry_date), icon: Calendar },
-    { label: 'الباركود', value: record.barcode, icon: Hash },
-    { label: 'ملاحظات', value: record.notes, icon: FileSpreadsheet },
-    { label: 'تاريخ الرفع', value: formatDate(record.created_at), icon: Calendar },
+    { label: 'ID', value: displayRecord.source_id, icon: Hash },
+    { label: 'الاسم العلمي', value: displayRecord.scientific_name, icon: Pill },
+    { label: 'الشركة', value: displayRecord.company, icon: Building2 },
+    { label: 'المخزن', value: displayRecord.warehouse, icon: Database },
+    { label: 'رقم الفاتورة', value: displayRecord.invoice_number, icon: Hash },
+    { label: 'تاريخ الفاتورة', value: formatDate(displayRecord.invoice_date), icon: Calendar },
+    { label: 'الكمية', value: formatNumber(displayRecord.quantity), icon: Package },
+    { label: 'سعر الشراء', value: formatNumber(displayRecord.unit_price), icon: DollarSign },
+    { label: 'السعر الكلي', value: formatNumber(displayRecord.total_price), icon: DollarSign },
+    { label: 'السعر الأصلي', value: formatNumber(displayRecord.original_price), icon: DollarSign },
+    { label: 'سعر البيع', value: formatNumber(displayRecord.selling_price), icon: DollarSign },
+    { label: 'هدية', value: formatNumber(displayRecord.gift), icon: Package },
+    { label: 'هدية مندوب', value: formatNumber(displayRecord.rep_gift), icon: Package },
+    { label: 'رقم الدفعة', value: displayRecord.batch_number, icon: Hash },
+    { label: 'تاريخ الانتهاء', value: displayRecord.expiry_raw || formatDate(displayRecord.expiry_date), icon: Calendar },
+    { label: 'الباركود', value: displayRecord.barcode, icon: Hash },
+    { label: 'ملاحظات', value: displayRecord.notes, icon: FileSpreadsheet },
+    { label: 'تاريخ الرفع', value: formatDate(displayRecord.created_at), icon: Calendar },
   ]
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -89,7 +103,7 @@ function MedicineDetailDialog({ record, open, onOpenChange, authedFetch }) {
         <DialogHeader>
           <DialogTitle className="text-2xl flex items-center gap-3">
             <div className="size-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center"><Pill className="size-5" /></div>
-            {record.name}
+            {displayRecord.name}
           </DialogTitle>
           <DialogDescription>كل المعلومات المتوفرة + سجل الشراء الكامل</DialogDescription>
         </DialogHeader>
@@ -149,6 +163,10 @@ function SearchTab({ authedFetch }) {
   const [open, setOpen] = useState(false)
   const [currentFile, setCurrentFile] = useState(null)
   const debounceRef = useRef(null)
+  const requestRef = useRef(0)
+  const abortRef = useRef(null)
+  const searchCacheRef = useRef(new Map())
+  const initialResultsRef = useRef([])
 
   // Load current upload info
   useEffect(() => {
@@ -163,26 +181,70 @@ function SearchTab({ authedFetch }) {
   useEffect(() => {
     if (!currentFile?.id) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (abortRef.current) abortRef.current.abort()
+
     const q = query.trim()
-    if (!q) {
+    const requestId = ++requestRef.current
+    const cacheKey = `${currentFile.id}:${q.toLocaleLowerCase('ar')}`
+
+    const applyResults = (rows) => {
+      if (requestId !== requestRef.current) return
+      const data = Array.isArray(rows) ? rows : []
+      setResults(data)
+
+      if (!q) {
+        initialResultsRef.current = data
+        setSuggestions([])
+        return
+      }
+
+      const names = new Map()
+      data.forEach(row => {
+        if (!row?.name) return
+        if (!names.has(row.name)) {
+          names.set(row.name, { name: row.name, company: row.company, scientific_name: row.scientific_name, hits: 0 })
+        }
+        names.get(row.name).hits += 1
+      })
+      setSuggestions(Array.from(names.values()).slice(0, 8))
+    }
+
+    // A single character does not start a server request. Keep file 190 contents visible.
+    if (q.length === 1) {
       setSuggestions([])
-      authedFetch('/api/search?q=&limit=50').then(r => r.json()).then(d => setResults(Array.isArray(d) ? d : []))
+      setResults(initialResultsRef.current)
       return
     }
+
+    const cached = searchCacheRef.current.get(cacheKey)
+    if (cached) {
+      applyResults(cached)
+      return
+    }
+
     debounceRef.current = setTimeout(async () => {
+      const controller = new AbortController()
+      abortRef.current = controller
       try {
-        const rRes = await authedFetch(`/api/search?q=${encodeURIComponent(q)}&limit=100`)
+        const params = new URLSearchParams({ q, limit: '100', upload_id: currentFile.id })
+        const rRes = await authedFetch(`/api/search?${params.toString()}`, { signal: controller.signal })
+        if (!rRes.ok) throw new Error('تعذر إكمال البحث')
         const rData = await rRes.json()
         const rows = Array.isArray(rData) ? rData : []
-        const names = new Map()
-        rows.forEach(row => {
-          if (!names.has(row.name)) names.set(row.name, { name: row.name, company: row.company, scientific_name: row.scientific_name, hits: 0 })
-          names.get(row.name).hits += 1
-        })
-        setSuggestions(Array.from(names.values()).slice(0, 8))
-        setResults(rows)
-      } catch (e) { console.error(e) }
-    }, 300)
+        searchCacheRef.current.set(cacheKey, rows)
+        if (searchCacheRef.current.size > 30) {
+          searchCacheRef.current.delete(searchCacheRef.current.keys().next().value)
+        }
+        applyResults(rows)
+      } catch (e) {
+        if (e.name !== 'AbortError') console.error(e)
+      }
+    }, q ? 350 : 0)
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
   }, [query, authedFetch, currentFile?.id])
 
   const sorted = useMemo(() => {

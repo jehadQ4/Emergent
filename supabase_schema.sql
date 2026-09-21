@@ -69,6 +69,9 @@ create index if not exists medicines_name_trgm_idx
 create index if not exists medicines_search_trgm_idx
   on public.medicines using gin (search_text gin_trgm_ops);
 
+create index if not exists medicines_upload_id_idx
+  on public.medicines (upload_id);
+
 create index if not exists medicines_company_trgm_idx
   on public.medicines using gin (company gin_trgm_ops);
 
