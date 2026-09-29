@@ -17,6 +17,19 @@ function money(v) {
   const n = Number(v)
   return Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'
 }
+function dateValue(v) {
+  const s = String(v || '').trim()
+  if (!s) return 0
+  const parts = s.split(/[\\/\\-]/).map(Number)
+  if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return 0
+  let [a,b,y] = parts
+  if (y < 100) y += 2000
+  let day, month
+  if (a > 12) { day = a; month = b }
+  else if (b > 12) { month = a; day = b }
+  else { month = a; day = b }
+  return new Date(y, month - 1, day).getTime() || 0
+}
 function normalizeRows(payload) {
   if (Array.isArray(payload)) return payload
   if (!payload || typeof payload !== 'object') return []
@@ -116,7 +129,8 @@ export default function DebtsTab({ authedFetch }) {
       s.total += Number(x.amount) || 0
       s.count += 1
       const d = String(x.date || '')
-      if (!s.lastDate || d > s.lastDate) { s.lastDate = d; s.lastInvoice = x.invoice_number }
+      const t = dateValue(d)
+      if (!s.lastDate || t > (s.lastDateValue || 0)) { s.lastDate = d; s.lastDateValue = t; s.lastInvoice = x.invoice_number }
     }
     return [...map.values()]
   }, [invoices])
@@ -253,16 +267,21 @@ export default function DebtsTab({ authedFetch }) {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>ديون المذاخر</CardTitle><CardDescription>اضغط على أي مذخر لعرض جميع قوائمه وتفاصيل دينه.</CardDescription></CardHeader>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div><CardTitle>ديون المذاخر</CardTitle><CardDescription className="mt-1">اضغط على أي مذخر لعرض جميع قوائمه وتفاصيل دينه.</CardDescription></div>
+            <div className="rounded-lg border bg-muted/30 px-4 py-3 min-w-52"><p className="text-xs text-muted-foreground">مجموع الديون الكلية</p><p className="text-xl font-bold num mt-1">{money(total)}</p></div>
+          </div>
+        </CardHeader>
         <CardContent className="space-y-3">
           <div className="relative max-w-md"><Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)} placeholder="ابحث باسم المذخر أو رقمه..." className="pr-9" /></div>
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full min-w-[720px] text-sm">
-              <thead className="bg-muted"><tr><th className="p-3 text-right">المذخر</th><th className="p-3 text-right">إجمالي الدين</th><th className="p-3 text-right">عدد القوائم</th><th className="p-3 text-right">آخر قائمة</th><th className="p-3 text-right">آخر تاريخ</th><th className="p-3"></th></tr></thead>
+              <thead className="bg-muted"><tr><th className="p-3 text-right w-[28%]">المذخر</th><th className="p-3 text-right w-[20%]">إجمالي الدين</th><th className="p-3 text-center w-[14%]">عدد القوائم</th><th className="p-3 text-center w-[18%]">آخر قائمة</th><th className="p-3 text-center w-[16%]">آخر تاريخ</th><th className="p-3 w-10"></th></tr></thead>
               <tbody>{filteredSupplierStats.map(s => {
                 const open = selectedSupplier && (String(selectedSupplier.id) === String(s.id)) && selectedSupplier.name === s.name
                 return <tr key={s.id || s.name} className="border-t cursor-pointer hover:bg-muted/40" onClick={() => setSelectedSupplier(open ? null : s)}>
-                  <td className="p-3 font-medium">{s.name}</td><td className="p-3 num font-bold">{money(s.total)}</td><td className="p-3 num">{s.count}</td><td className="p-3 num">{s.lastInvoice || '—'}</td><td className="p-3 num">{s.lastDate || '—'}</td><td className="p-3">{open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}</td>
+                  <td className="p-3 font-medium">{s.name}</td><td className="p-3 num font-bold whitespace-nowrap">{money(s.total)}</td><td className="p-3 num text-center">{s.count}</td><td className="p-3 num text-center whitespace-nowrap">{s.lastInvoice || '—'}</td><td className="p-3 num text-center whitespace-nowrap">{s.lastDate || '—'}</td><td className="p-3 text-center">{open ? <ChevronUp className="size-4 mx-auto" /> : <ChevronDown className="size-4 mx-auto" />}</td>
                 </tr>
               })}</tbody>
             </table>
