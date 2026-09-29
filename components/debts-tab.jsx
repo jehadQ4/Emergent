@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, FileText, Loader2, RefreshCw, Upload, WalletCards } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FileText, Loader2, RefreshCw, Search, ShoppingCart, TrendingUp, Upload, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -54,6 +54,9 @@ export default function DebtsTab({ authedFetch }) {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState({})
   const [savingKey, setSavingKey] = useState(null)
+  const [supplierSearch, setSupplierSearch] = useState('')
+  const [selectedSupplier, setSelectedSupplier] = useState(null)
+  const [rankingMode, setRankingMode] = useState('count')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -77,6 +80,29 @@ export default function DebtsTab({ authedFetch }) {
 
   const total = useMemo(() => invoices.reduce((s, x) => s + (Number(x.amount) || 0), 0), [invoices])
   const suppliersCount = useMemo(() => new Set(invoices.map(x => String(x.supplier_id)).filter(Boolean)).size, [invoices])
+  const supplierStats = useMemo(() => {
+    const map = new Map()
+    for (const x of invoices) {
+      const id = String(x.supplier_id || '')
+      const name = x.supplier_name || supplierName(id) || ('مذخر ' + id)
+      const key = id || name
+      if (!map.has(key)) map.set(key, { id, name, total: 0, count: 0, lastDate: '', lastInvoice: '' })
+      const s = map.get(key)
+      s.total += Number(x.amount) || 0
+      s.count += 1
+      const d = String(x.date || '')
+      if (!s.lastDate || d > s.lastDate) { s.lastDate = d; s.lastInvoice = x.invoice_number }
+    }
+    return [...map.values()]
+  }, [invoices])
+  const topByCount = useMemo(() => [...supplierStats].sort((a,b) => b.count-a.count).slice(0,10), [supplierStats])
+  const topByAmount = useMemo(() => [...supplierStats].sort((a,b) => b.total-a.total).slice(0,10), [supplierStats])
+  const highestSupplier = topByAmount[0]
+  const filteredSupplierStats = useMemo(() => {
+    const q = supplierSearch.trim().toLowerCase()
+    return [...supplierStats].filter(s => !q || s.name.toLowerCase().includes(q) || s.id.includes(q)).sort((a,b) => b.total-a.total)
+  }, [supplierStats, supplierSearch])
+  const selectedInvoices = useMemo(() => selectedSupplier ? invoices.filter(x => String(x.supplier_id || '') === String(selectedSupplier.id || '') || (!selectedSupplier.id && (x.supplier_name || '') === selectedSupplier.name)).slice().reverse() : [], [invoices, selectedSupplier])
 
   async function uploadPdf() {
     if (!file) return toast.error('اختر ملف PDF أولاً')
@@ -174,6 +200,52 @@ export default function DebtsTab({ authedFetch }) {
               </tr>
             )})}</tbody>
           </table>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><TrendingUp className="size-5" /> تحليل ديون المذاخر</CardTitle>
+          <CardDescription>يعتمد على القوائم المسجلة فعلياً ويبين أكثر المذاخر طلباً وأعلى المبالغ.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">أعلى مذخر من حيث الدين</p><p className="font-bold mt-1">{highestSupplier?.name || '—'}</p><p className="num text-sm mt-1">{highestSupplier ? money(highestSupplier.total) : '—'}</p></div>
+            <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">الأكثر طلباً بعدد القوائم</p><p className="font-bold mt-1">{topByCount[0]?.name || '—'}</p><p className="num text-sm mt-1">{topByCount[0] ? topByCount[0].count + ' قائمة' : '—'}</p></div>
+            <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">متوسط قيمة القائمة</p><p className="font-bold num mt-1">{invoices.length ? money(total / invoices.length) : '—'}</p><p className="text-xs text-muted-foreground mt-1">لكل القوائم المسجلة</p></div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant={rankingMode === 'count' ? 'default' : 'outline'} onClick={() => setRankingMode('count')}><ShoppingCart className="size-4 ml-1" /> الأكثر طلباً</Button>
+            <Button size="sm" variant={rankingMode === 'amount' ? 'default' : 'outline'} onClick={() => setRankingMode('amount')}><WalletCards className="size-4 ml-1" /> الأعلى مبلغاً</Button>
+          </div>
+          <div className="grid gap-2">
+            {(rankingMode === 'count' ? topByCount : topByAmount).map((s,i) => <button key={s.id || s.name} onClick={() => setSelectedSupplier(s)} className="w-full rounded-lg border p-3 flex items-center justify-between text-right hover:bg-muted/50 transition-colors">
+              <div className="flex items-center gap-3"><span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center num text-xs font-bold">{i+1}</span><div><p className="font-medium">{s.name}</p><p className="text-xs text-muted-foreground num">{s.count} قائمة</p></div></div>
+              <p className="font-bold num">{money(s.total)}</p>
+            </button>)}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>ديون المذاخر</CardTitle><CardDescription>اضغط على أي مذخر لعرض جميع قوائمه وتفاصيل دينه.</CardDescription></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="relative max-w-md"><Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)} placeholder="ابحث باسم المذخر أو رقمه..." className="pr-9" /></div>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="bg-muted"><tr><th className="p-3 text-right">المذخر</th><th className="p-3 text-right">إجمالي الدين</th><th className="p-3 text-right">عدد القوائم</th><th className="p-3 text-right">آخر قائمة</th><th className="p-3 text-right">آخر تاريخ</th><th className="p-3"></th></tr></thead>
+              <tbody>{filteredSupplierStats.map(s => {
+                const open = selectedSupplier && (String(selectedSupplier.id) === String(s.id)) && selectedSupplier.name === s.name
+                return <tr key={s.id || s.name} className="border-t cursor-pointer hover:bg-muted/40" onClick={() => setSelectedSupplier(open ? null : s)}>
+                  <td className="p-3 font-medium">{s.name}</td><td className="p-3 num font-bold">{money(s.total)}</td><td className="p-3 num">{s.count}</td><td className="p-3 num">{s.lastInvoice || '—'}</td><td className="p-3 num">{s.lastDate || '—'}</td><td className="p-3">{open ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}</td>
+                </tr>
+              })}</tbody>
+            </table>
+          </div>
+          {selectedSupplier && <div className="rounded-lg border overflow-hidden">
+            <div className="p-4 bg-muted/40 flex flex-wrap justify-between gap-2"><div><p className="font-bold">{selectedSupplier.name}</p><p className="text-xs text-muted-foreground">تفاصيل جميع القوائم</p></div><div className="text-left"><p className="font-bold num">{money(selectedSupplier.total)}</p><p className="text-xs text-muted-foreground num">{selectedSupplier.count} قائمة</p></div></div>
+            <div className="overflow-x-auto max-h-80"><table className="w-full min-w-[600px] text-sm"><thead className="bg-muted sticky top-0"><tr><th className="p-3 text-right">رقم القائمة</th><th className="p-3 text-right">التاريخ</th><th className="p-3 text-right">المبلغ</th></tr></thead><tbody>{selectedInvoices.map((r,i) => <tr key={r.invoice_number+i} className="border-t"><td className="p-3 num">{r.invoice_number}</td><td className="p-3 num">{r.date || '—'}</td><td className="p-3 num font-semibold">{money(r.amount)}</td></tr>)}</tbody></table></div>
+          </div>}
         </CardContent>
       </Card>
 
