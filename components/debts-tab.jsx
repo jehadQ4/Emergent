@@ -59,12 +59,15 @@ function reviewRow(r) {
   }
 }
 function invoiceRow(r) {
+  // Google Sheets/n8n can preserve accidental spaces in column headers.
+  // Trim all keys once so " القائمة_ID" and "القائمة_ID" are treated identically.
+  const row = Object.fromEntries(Object.entries(r || {}).map(([key, value]) => [key.trim(), value]))
   return {
-    invoice_number: String(r.invoice_number ?? r['ID_القائمة'] ?? r['القائمة_ID'] ?? '').trim(),
-    supplier_id: r.supplier_id ?? r['ID_المذخر'] ?? '',
-    supplier_name: r.supplier_name ?? r.col_3 ?? supplierName(r.supplier_id ?? r['ID_المذخر']),
-    date: r.date ?? r['التاريخ'] ?? '',
-    amount: r.amount ?? r['مجموع القائمة'] ?? '',
+    invoice_number: String(row.invoice_number ?? row['ID_القائمة'] ?? row['القائمة_ID'] ?? '').trim(),
+    supplier_id: row.supplier_id ?? row['ID_المذخر'] ?? '',
+    supplier_name: row.supplier_name ?? row.col_3 ?? supplierName(row.supplier_id ?? row['ID_المذخر']),
+    date: row.date ?? row['التاريخ'] ?? '',
+    amount: row.amount ?? row['مجموع القائمة'] ?? '',
   }
 }
 
