@@ -19,7 +19,28 @@ function money(v) {
 }
 function normalizeRows(payload) {
   if (Array.isArray(payload)) return payload
-  return payload?.items || payload?.data || payload?.rows || []
+  if (!payload || typeof payload !== 'object') return []
+  if (Array.isArray(payload.items)) return payload.items
+  if (Array.isArray(payload.data)) return payload.data
+  if (Array.isArray(payload.rows)) return payload.rows
+
+  // n8n may return multiple incoming items as a JSON object with numeric keys
+  // instead of a real array. Convert those values back to rows.
+  const numericRows = Object.keys(payload)
+    .filter(key => /^\\d+$/.test(key))
+    .sort((a, b) => Number(a) - Number(b))
+    .map(key => payload[key])
+    .filter(row => row && typeof row === 'object')
+  if (numericRows.length) return numericRows
+
+  // Also support a single row response.
+  if (
+    payload['القائمة_ID'] !== undefined ||
+    payload['رقم القائمة'] !== undefined ||
+    payload.invoice_number !== undefined
+  ) return [payload]
+
+  return []
 }
 function reviewRow(r) {
   return {
