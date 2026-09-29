@@ -35,6 +35,7 @@ function normalizeRows(payload) {
 
   // Also support a single row response.
   if (
+    payload['ID_القائمة'] !== undefined ||
     payload['القائمة_ID'] !== undefined ||
     payload['رقم القائمة'] !== undefined ||
     payload.invoice_number !== undefined
@@ -59,7 +60,7 @@ function reviewRow(r) {
 }
 function invoiceRow(r) {
   return {
-    invoice_number: String(r.invoice_number ?? r['القائمة_ID'] ?? '').trim(),
+    invoice_number: String(r.invoice_number ?? r['ID_القائمة'] ?? r['القائمة_ID'] ?? '').trim(),
     supplier_id: r.supplier_id ?? r['ID_المذخر'] ?? '',
     supplier_name: r.supplier_name ?? r.col_3 ?? supplierName(r.supplier_id ?? r['ID_المذخر']),
     date: r.date ?? r['التاريخ'] ?? '',
