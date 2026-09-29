@@ -52,6 +52,22 @@ const INVENTORY_WEBHOOKS = {
   delete: process.env.N8N_DELETE_MEDICINE_URL || 'https://n8n.jehadq4.io/webhook/delete-medicine',
 }
 
+const DEBT_WEBHOOKS = {
+  upload: process.env.N8N_DEBT_UPLOAD_URL || 'https://n8n.jehadq4.io/webhook/import-debt-pdf',
+  invoices: process.env.N8N_DEBT_INVOICES_URL || 'https://n8n.jehadq4.io/webhook/get-debt-invoices',
+  review: process.env.N8N_DEBT_REVIEW_URL || 'https://n8n.jehadq4.io/webhook/get-debt-review',
+  approve: process.env.N8N_DEBT_APPROVE_URL || 'https://n8n.jehadq4.io/webhook/approve-debt-review',
+}
+
+async function callDebtWebhook(url, options = {}, timeout = 120000) {
+  const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(timeout), ...options })
+  const text = await response.text()
+  let data = null
+  try { data = text ? JSON.parse(text) : null } catch { data = { message: text } }
+  if (!response.ok) throw new Error(data?.message || data?.error || `n8n debt error: ${response.status}`)
+  return data
+}
+
 async function callInventoryWebhook(url, options = {}) {
   const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(20000), ...options })
   const text = await response.text()
@@ -496,6 +512,58 @@ async function handle(request, { params }) {
         return true
       })
       return cors(NextResponse.json(history))
+    }
+
+    // -------- PHARMACY DEBTS (ADMIN ONLY) --------
+    if (route === '/debts/upload' && method === 'POST') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const formData = await request.formData()
+      const file = formData.get('data') || formData.get('file')
+      if (!file) return cors(NextResponse.json({ error: 'اختر ملف PDF' }, { status: 400 }))
+      if (!String(file.name || '').toLowerCase().endsWith('.pdf')) return cors(NextResponse.json({ error: 'يسمح بملفات PDF فقط' }, { status: 400 }))
+      if (file.size > 40 * 1024 * 1024) return cors(NextResponse.json({ error: 'حجم الملف أكبر من 40 MB' }, { status: 413 }))
+      const outgoing = new FormData()
+      outgoing.append('data', file, file.name)
+      const data = await callDebtWebhook(DEBT_WEBHOOKS.upload, { method: 'POST', body: outgoing }, 180000)
+      return cors(NextResponse.json(data || { ok: true }))
+    }
+
+    if (route === '/debts/invoices' && method === 'GET') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const data = await callDebtWebhook(DEBT_WEBHOOKS.invoices)
+      return cors(NextResponse.json(data || []))
+    }
+
+    if (route === '/debts/review' && method === 'GET') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const data = await callDebtWebhook(DEBT_WEBHOOKS.review)
+      return cors(NextResponse.json(data || []))
+    }
+
+    if (route === '/debts/review/approve' && method === 'POST') {
+      const profile = await getUserProfile(request)
+      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      const body = await request.json()
+      if (!body?.invoice_number || !body?.supplier_id || !body?.date || !Number.isFinite(Number(body?.amount)) || Number(body.amount) <= 0) {
+        return cors(NextResponse.json({ error: 'بيانات القائمة غير مكتملة' }, { status: 400 }))
+      }
+      const payload = {
+        ...body,
+        supplier_id: Number(body.supplier_id),
+        amount: Number(body.amount),
+        type: body.type === 'return' ? 'return' : 'sale',
+      }
+      const data = await callDebtWebhook(DEBT_WEBHOOKS.approve, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      })
+      return cors(NextResponse.json(data || { ok: true }))
     }
 
     // -------- USERS LIST (admin only) --------
