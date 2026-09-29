@@ -12,6 +12,7 @@ import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, D
 import { toast } from 'sonner'
 import { getBrowserSupabase } from '@/lib/supabaseBrowser'
 import InventorySheetTab from '@/components/inventory-sheet-tab'
+import DebtsTab from '@/components/debts-tab'
 
 function formatNumber(n) {
   if (n === null || n === undefined || n === '') return '—'
@@ -880,16 +881,18 @@ function App() {
       </header>
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className={`grid h-auto w-full ${isAdmin ? 'grid-cols-2 sm:grid-cols-4 max-w-4xl' : 'grid-cols-1 max-w-xs'} gap-1`}>
+          <TabsList className={`grid h-auto w-full ${isAdmin ? 'grid-cols-2 sm:grid-cols-5 max-w-5xl' : 'grid-cols-1 max-w-xs'} gap-1`}>
             <TabsTrigger value="search" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Search className="size-4" /> بحث</TabsTrigger>
             {isAdmin && <TabsTrigger value="admin" className="gap-1.5 py-2.5 text-xs sm:text-sm"><ShieldCheck className="size-4" /> رفع وإدارة</TabsTrigger>}
             {isAdmin && <TabsTrigger value="users" className="gap-1.5 py-2.5 text-xs sm:text-sm"><UsersIcon className="size-4" /> المستخدمون {pendingCount > 0 && <Badge className="bg-amber-500 hover:bg-amber-600 num text-[10px] px-1.5">{pendingCount}</Badge>}</TabsTrigger>}
             {isAdmin && <TabsTrigger value="inventory" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Warehouse className="size-4" /> إدارة المخزن</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="debts" className="gap-1.5 py-2.5 text-xs sm:text-sm"><DollarSign className="size-4" /> الديون</TabsTrigger>}
           </TabsList>
           <TabsContent value="search"><SearchTab authedFetch={authedFetch} /></TabsContent>
           {isAdmin && <TabsContent value="admin"><AdminTab authedFetch={authedFetch} /></TabsContent>}
           {isAdmin && <TabsContent value="users"><UsersTab authedFetch={authedFetch} currentUser={profile} /></TabsContent>}
           {isAdmin && <TabsContent value="inventory"><InventorySheetTab authedFetch={authedFetch} /></TabsContent>}
+          {isAdmin && <TabsContent value="debts"><DebtsTab authedFetch={authedFetch} /></TabsContent>}
         </Tabs>
       </main>
       <footer className="border-t mt-12 py-4 text-center text-xs text-muted-foreground">نظام بحث الأدوية — Supabase + Next.js</footer>
