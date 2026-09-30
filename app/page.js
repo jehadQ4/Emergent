@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, DollarSign, Hash, Package, History, Loader2, ShieldCheck, X, LogOut, UserPlus, User, Trash2, Users as UsersIcon, Warehouse, Plus, Minus, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react'
+import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, DollarSign, Hash, Package, History, Loader2, ShieldCheck, X, LogOut, UserPlus, User, Trash2, Users as UsersIcon, Warehouse, Plus, Minus, AlertTriangle, RefreshCw, ExternalLink, Home, ChevronLeft, Menu, Eye, EyeOff, LockKeyhole, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { getBrowserSupabase } from '@/lib/supabaseBrowser'
 import InventorySheetTab from '@/components/inventory-sheet-tab'
@@ -602,7 +602,8 @@ function UsersTab({ authedFetch, currentUser }) {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await authedFetch('/api/users'); const d = await r.json()
+      const r = await authedFetch('/api/users')
+      const d = await r.json()
       setUsers(Array.isArray(d) ? d : [])
     } finally { setLoading(false) }
   }, [authedFetch])
@@ -618,19 +619,18 @@ function UsersTab({ authedFetch, currentUser }) {
       else { toast.success('تم إنشاء المستخدم'); setOpen(false); setForm({ email: '', password: '', full_name: '', role: 'staff' }); refresh() }
     } finally { setCreating(false) }
   }
-
-  async function remove(id, isPending = false) {
-    if (!confirm(isPending ? 'رفض هذا الطلب وحذف المستخدم؟' : 'حذف هذا المستخدم؟')) return
-    const r = await authedFetch(`/api/users/${id}`, { method: 'DELETE' }); const d = await r.json()
-    if (!r.ok) toast.error(d?.error); else { toast.success(isPending ? 'تم رفض الطلب' : 'تم الحذف'); refresh() }
+  async function remove(id, pending = false) {
+    if (!confirm(pending ? 'رفض طلب هذا المستخدم؟' : 'هل تريد حذف هذا المستخدم؟')) return
+    const r = await authedFetch(`/api/users/${id}`, { method: 'DELETE' })
+    const d = await r.json()
+    if (!r.ok) toast.error(d?.error || 'تعذر تنفيذ العملية')
+    else { toast.success(pending ? 'تم رفض الطلب' : 'تم حذف المستخدم'); refresh() }
   }
   async function changeRole(id, role) {
     const r = await authedFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role }) })
-    const d = await r.json(); if (!r.ok) toast.error(d?.error); else { toast.success('تم التحديث'); refresh() }
-  }
-  async function approve(id, role = 'staff') {
-    const r = await authedFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role }) })
-    const d = await r.json(); if (!r.ok) toast.error(d?.error); else { toast.success(`تمت الموافقة كـ ${role === 'admin' ? 'رئيس' : 'موظف'}`); refresh() }
+    const d = await r.json()
+    if (!r.ok) toast.error(d?.error || 'تعذر تغيير الصلاحية')
+    else { toast.success('تم تحديث الصلاحية'); refresh() }
   }
 
   const pending = users.filter(u => u.role === 'pending')
@@ -638,163 +638,114 @@ function UsersTab({ authedFetch, currentUser }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h2 className="text-xl font-bold flex items-center gap-2"><UsersIcon className="size-5 text-primary" /> إدارة المستخدمين</h2><p className="text-sm text-muted-foreground">يمكن للموظفين تسجيل أنفسهم — وأنت توافق أو ترفض من هنا.</p></div>
-        <Button onClick={() => setOpen(true)} className="gap-2" variant="outline"><UserPlus className="size-4" /> إضافة مستخدم مباشرة</Button>
+      <section className="rounded-2xl border bg-white p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div><h2 className="text-xl sm:text-2xl font-bold">المستخدمون والصلاحيات</h2><p className="text-sm text-muted-foreground mt-1">تحكم بمن يستطيع الدخول وما هي صلاحية كل حساب.</p></div>
+        <Button onClick={() => setOpen(true)} className="gap-2 sm:self-auto self-stretch"><UserPlus className="size-4" /> إضافة مستخدم</Button>
+      </section>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">المستخدمون</p><p className="text-2xl font-bold num mt-1">{active.length}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">بانتظار الموافقة</p><p className="text-2xl font-bold num mt-1">{pending.length}</p></CardContent></Card>
+        <Card className="col-span-2 sm:col-span-1"><CardContent className="p-4"><p className="text-xs text-muted-foreground">الرؤساء</p><p className="text-2xl font-bold num mt-1">{active.filter(u => u.role === 'admin').length}</p></CardContent></Card>
       </div>
 
-      {/* Pending users section */}
-      {pending.length > 0 && (
-        <Card className="border-amber-300 bg-amber-50/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-amber-900">
-              <ShieldCheck className="size-5" /> طلبات بانتظار الموافقة
-              <Badge className="bg-amber-500 hover:bg-amber-600 num">{pending.length}</Badge>
-            </CardTitle>
-            <CardDescription>هؤلاء سجلوا أنفسهم وينتظرون موافقتك للوصول إلى النظام.</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <table className="w-full text-sm">
-              <thead className="bg-amber-100/50 text-amber-900"><tr><th className="p-3 text-right">الاسم</th><th className="p-3 text-right">البريد</th><th className="p-3 text-right">تاريخ الطلب</th><th className="p-3 text-left">الإجراء</th></tr></thead>
-              <tbody>{pending.map(u => (
-                <tr key={u.id} className="border-t border-amber-200">
-                  <td className="p-3 font-medium">{u.full_name || '—'}</td>
-                  <td className="p-3">{u.email}</td>
-                  <td className="p-3 num text-muted-foreground">{formatDate(u.created_at)}</td>
-                  <td className="p-3 text-left">
-                    <div className="flex gap-2 justify-end flex-wrap">
-                      <Button size="sm" onClick={() => approve(u.id, 'staff')} className="bg-emerald-600 hover:bg-emerald-700 gap-1">
-                        <ShieldCheck className="size-4" /> موافقة (موظف)
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => approve(u.id, 'admin')} className="gap-1">
-                        <ShieldCheck className="size-4" /> موافقة (رئيس)
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => remove(u.id, true)} className="text-destructive hover:text-destructive">
-                        <X className="size-4" /> رفض
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
+      {pending.length > 0 && <section className="space-y-3">
+        <div><h3 className="font-bold text-lg">طلبات جديدة</h3><p className="text-sm text-muted-foreground">الحسابات التالية لا تستطيع الوصول للبيانات قبل موافقتك.</p></div>
+        <div className="grid gap-3">{pending.map(u => <Card key={u.id} className="border-amber-200"><CardContent className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0"><div className="size-11 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><User className="size-5" /></div><div className="min-w-0"><p className="font-bold truncate">{u.full_name || 'بدون اسم'}</p><p className="text-sm text-muted-foreground truncate">{u.email}</p></div></div>
+          <div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => changeRole(u.id,'staff')} className="gap-1"><ShieldCheck className="size-4" /> قبول كموظف</Button><Button size="sm" variant="outline" onClick={() => changeRole(u.id,'admin')}>قبول كرئيس</Button><Button size="sm" variant="ghost" onClick={() => remove(u.id,true)} className="text-destructive">رفض</Button></div>
+        </CardContent></Card>)}</div>
+      </section>}
 
-      {/* Active users */}
-      <Card><CardContent className="p-0 overflow-hidden">
-        {loading ? <div className="p-6 text-center text-muted-foreground"><Loader2 className="size-5 animate-spin inline-block ml-2" /> جاري التحميل...</div> : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-muted-foreground"><tr><th className="p-3 text-right">الاسم</th><th className="p-3 text-right">البريد</th><th className="p-3 text-right">الدور</th><th className="p-3 text-right">تاريخ الإنشاء</th><th className="p-3"></th></tr></thead>
-            <tbody>{active.map(u => (
-              <tr key={u.id} className="border-t hover:bg-muted/30">
-                <td className="p-3 font-medium">{u.full_name || '—'} {u.id === currentUser?.id && <Badge variant="secondary" className="mr-2">أنت</Badge>}</td>
-                <td className="p-3">{u.email}</td>
-                <td className="p-3">
-                  <Select value={u.role} onValueChange={(v) => changeRole(u.id, v)} disabled={u.id === currentUser?.id}>
-                    <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="admin">رئيس</SelectItem><SelectItem value="staff">موظف</SelectItem></SelectContent>
-                  </Select>
-                </td>
-                <td className="p-3 num text-muted-foreground">{formatDate(u.created_at)}</td>
-                <td className="p-3 text-left">{u.id !== currentUser?.id && (<Button size="sm" variant="ghost" onClick={() => remove(u.id)}><Trash2 className="size-4 text-destructive" /></Button>)}</td>
-              </tr>
-            ))}{active.length === 0 && (<tr><td colSpan="5" className="p-6 text-center text-muted-foreground">لا يوجد مستخدمون مفعّلون.</td></tr>)}</tbody>
-          </table>
-        )}
-      </CardContent></Card>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><UserPlus className="size-5 text-primary" /> إضافة مستخدم مفعّل مباشرة</DialogTitle><DialogDescription>سيتم إنشاء الحساب وتفعيله فوراً (تجاوز خطوة الموافقة).</DialogDescription></DialogHeader>
-          <div className="space-y-3">
-            <Input placeholder="الاسم الكامل" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} />
-            <Input placeholder="البريد الإلكتروني" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-            <Input placeholder="كلمة المرور (8 أحرف أو أكثر)" type="text" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-            <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="staff">موظف (بحث فقط)</SelectItem><SelectItem value="admin">رئيس (بحث + رفع + إدارة)</SelectItem></SelectContent>
-            </Select>
+      <section className="space-y-3">
+        <h3 className="font-bold text-lg">الحسابات المفعّلة</h3>
+        {loading ? <Card><CardContent className="p-8 text-center text-muted-foreground"><Loader2 className="size-5 animate-spin inline ml-2" />جاري التحميل...</CardContent></Card> :
+        <div className="grid gap-3">{active.map(u => <Card key={u.id}><CardContent className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0"><div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0"><User className="size-5" /></div><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold truncate">{u.full_name || 'بدون اسم'}</p>{u.id === currentUser?.id && <Badge variant="secondary">أنت</Badge>}</div><p className="text-sm text-muted-foreground truncate">{u.email}</p></div></div>
+          <div className="flex items-center gap-2">
+            <Select value={u.role} onValueChange={v => changeRole(u.id,v)} disabled={u.id === currentUser?.id}><SelectTrigger className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">رئيس</SelectItem><SelectItem value="staff">موظف</SelectItem></SelectContent></Select>
+            {u.id !== currentUser?.id && <Button size="icon" variant="ghost" onClick={() => remove(u.id)} title="حذف المستخدم"><Trash2 className="size-4 text-destructive" /></Button>}
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button onClick={create} disabled={creating}>{creating ? <Loader2 className="size-4 animate-spin" /> : 'إنشاء'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </CardContent></Card>)}{active.length===0 && <Card><CardContent className="p-8 text-center text-muted-foreground">لا توجد حسابات مفعّلة.</CardContent></Card>}</div>}
+      </section>
+
+      <Dialog open={open} onOpenChange={setOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>إضافة مستخدم</DialogTitle><DialogDescription>الحساب الذي تنشئه هنا سيكون مفعّلاً مباشرة بالصلاحية التي تختارها.</DialogDescription></DialogHeader>
+        <div className="space-y-3"><Input placeholder="الاسم الكامل" value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})}/><Input placeholder="البريد الإلكتروني" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/><Input placeholder="كلمة المرور — 8 أحرف أو أكثر" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><Select value={form.role} onValueChange={v=>setForm({...form,role:v})}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="staff">موظف — بحث فقط</SelectItem><SelectItem value="admin">رئيس — جميع الصلاحيات</SelectItem></SelectContent></Select></div>
+        <DialogFooter><Button variant="outline" onClick={()=>setOpen(false)}>إلغاء</Button><Button onClick={create} disabled={creating}>{creating?<Loader2 className="size-4 animate-spin"/>:'إنشاء الحساب'}</Button></DialogFooter>
+      </DialogContent></Dialog>
     </div>
   )
 }
 
 function LoginScreen({ onLoggedIn }) {
-  const [mode, setMode] = useState('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [loading, setLoading] = useState(false);
-const submit = async (e) => {
-  e.preventDefault();
+  const [mode, setMode] = useState('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
-  setLoading(true);
-
-  try {
-    const sb = getBrowserSupabase();
-
-    if (mode === "login") {
-      const { error } = await sb.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        toast.error(error.message);
-        return;
+  const submit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const sb = getBrowserSupabase()
+      if (mode === 'login') {
+        const { error } = await sb.auth.signInWithPassword({ email, password })
+        if (error) { toast.error('البريد الإلكتروني أو كلمة المرور غير صحيحة'); return }
+        toast.success('أهلاً بك')
+      } else {
+        const response = await fetch('/api/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, full_name: fullName }),
+        })
+        const data = await response.json()
+        if (!response.ok) { toast.error(data?.error || 'تعذر إنشاء الحساب'); return }
+        toast.success('تم إنشاء الحساب وهو بانتظار موافقة الرئيس')
+        setMode('login')
       }
-
-      toast.success("تم تسجيل الدخول");
-    } else {
-      const response = await fetch('/api/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, full_name: fullName }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        toast.error(data?.error || 'تعذر إنشاء الحساب');
-        return;
-      }
-      toast.success("تم إنشاء الحساب وهو بانتظار موافقة الرئيس");
-      setMode('login');
-    }
-  } finally {
-    setLoading(false);
+    } finally { setLoading(false) }
   }
-};
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-white to-cyan-50 p-4">
-      <Card className="w-full max-w-md shadow-xl border-0">
-        <CardHeader className="text-center pb-4">
-          <img src="/logo.png" alt="شعار صيدلية الغسق" className="h-32 w-auto object-contain mx-auto drop-shadow-sm" />
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2 mb-4 bg-muted p-1 rounded-lg">
-            <button type="button" onClick={() => setMode('login')} className={`flex-1 py-2 rounded-md text-sm font-medium transition ${mode === 'login' ? 'bg-white shadow text-foreground' : 'text-muted-foreground'}`}>تسجيل دخول</button>
-            <button type="button" onClick={() => setMode('signup')} className={`flex-1 py-2 rounded-md text-sm font-medium transition ${mode === 'signup' ? 'bg-white shadow text-foreground' : 'text-muted-foreground'}`}>إنشاء حساب</button>
+    <div className="min-h-screen bg-slate-50 flex" dir="rtl">
+      <section className="hidden lg:flex lg:w-[48%] bg-primary text-primary-foreground relative overflow-hidden p-12 flex-col justify-between">
+        <div className="absolute -top-32 -left-32 size-96 rounded-full bg-white/5" />
+        <div className="absolute bottom-10 right-10 size-72 rounded-full bg-white/5" />
+        <img src="/logo.png" alt="شعار النظام" className="h-24 w-auto object-contain self-start brightness-0 invert" />
+        <div className="relative max-w-lg">
+          <div className="size-12 rounded-2xl bg-white/10 flex items-center justify-center mb-6"><Sparkles className="size-6" /></div>
+          <h1 className="text-4xl font-bold leading-tight">إدارة الصيدلية<br />بشكل أبسط وأوضح.</h1>
+          <p className="mt-5 text-primary-foreground/75 text-lg leading-8">البحث عن الأدوية، إدارة المخزن، متابعة الديون والملفات من واجهة واحدة آمنة وسريعة.</p>
+        </div>
+        <p className="text-sm text-primary-foreground/55">نظام إدارة الصيدلية</p>
+      </section>
+
+      <section className="flex-1 flex items-center justify-center p-4 sm:p-8">
+        <div className="w-full max-w-md">
+          <div className="lg:hidden text-center mb-8"><img src="/logo.png" alt="شعار النظام" className="h-24 w-auto object-contain mx-auto" /></div>
+          <div className="mb-7">
+            <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4"><LockKeyhole className="size-6" /></div>
+            <h2 className="text-3xl font-bold tracking-tight">{mode === 'login' ? 'أهلاً بك من جديد' : 'إنشاء حساب جديد'}</h2>
+            <p className="text-muted-foreground mt-2">{mode === 'login' ? 'سجّل الدخول للوصول إلى مساحة عملك.' : 'أنشئ حسابك وسيتم تفعيله بعد موافقة الرئيس.'}</p>
           </div>
-          <form onSubmit={submit} className="space-y-3">
-            {mode === 'signup' && (
-              <div className="space-y-1"><label className="text-sm font-medium">الاسم الكامل</label><Input value={fullName} onChange={e => setFullName(e.target.value)} required className="h-11" placeholder="اسمك الكامل" /></div>
-            )}
-            <div className="space-y-1"><label className="text-sm font-medium">البريد الإلكتروني</label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="h-11" placeholder="name@pharmacy.com" /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">كلمة المرور</label><Input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} className="h-11" placeholder="••••••••" /></div>
-            <Button type="submit" className="w-full h-11 mt-2" disabled={loading}>
-              {loading ? <Loader2 className="size-4 animate-spin" /> : (mode === 'login' ? 'دخول' : 'إنشاء حساب جديد')}
-            </Button>
+          <div className="flex gap-1 mb-6 bg-muted p-1 rounded-xl">
+            <button type="button" onClick={() => setMode('login')} className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition ${mode === 'login' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}>تسجيل الدخول</button>
+            <button type="button" onClick={() => setMode('signup')} className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition ${mode === 'signup' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}>حساب جديد</button>
+          </div>
+          <form onSubmit={submit} className="space-y-4">
+            {mode === 'signup' && <div className="space-y-2"><label className="text-sm font-medium">الاسم الكامل</label><Input value={fullName} onChange={e => setFullName(e.target.value)} required className="h-12 bg-white" placeholder="الاسم الكامل" /></div>}
+            <div className="space-y-2"><label className="text-sm font-medium">البريد الإلكتروني</label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="h-12 bg-white text-left" dir="ltr" placeholder="name@example.com" /></div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">كلمة المرور</label>
+              <div className="relative"><Input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={8} className="h-12 bg-white pl-11" placeholder="••••••••" /><button type="button" onClick={() => setShowPassword(v => !v)} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}</button></div>
+            </div>
+            <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={loading}>{loading ? <Loader2 className="size-5 animate-spin" /> : (mode === 'login' ? 'دخول إلى النظام' : 'إرسال طلب التسجيل')}</Button>
           </form>
-          {mode === 'signup' && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mt-3 text-center">
-              ⏳ سيتم تفعيل حسابك بعد موافقة الرئيس من داخل النظام.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          {mode === 'signup' && <p className="text-xs text-muted-foreground bg-muted/60 rounded-xl p-3 mt-4 text-center">الحساب الجديد لا يحصل على أي صلاحية قبل موافقة الرئيس.</p>}
+        </div>
+      </section>
     </div>
   )
 }
@@ -822,7 +773,7 @@ function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [bootLoading, setBootLoading] = useState(true)
-  const [tab, setTab] = useState('search')
+  const [tab, setTab] = useState('home')
   const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
@@ -862,40 +813,73 @@ function App() {
 
   const isAdmin = profile?.role === 'admin'
 
+  const homeCards = [
+    { value: 'search', title: 'البحث عن الأدوية', desc: 'بحث سريع في جميع ملفات الأدوية والفواتير.', icon: Search, allowed: true },
+    { value: 'inventory', title: 'إدارة المخزن', desc: 'الكميات، الإضافة، الصرف والتنبيهات.', icon: Warehouse, allowed: isAdmin },
+    { value: 'debts', title: 'ديون المذاخر', desc: 'متابعة الديون والقوائم وتحليل المذاخر.', icon: DollarSign, allowed: isAdmin },
+    { value: 'admin', title: 'رفع وإدارة الملفات', desc: 'رفع الملفات ومتابعة عمليات الاستيراد.', icon: Upload, allowed: isAdmin },
+    { value: 'users', title: 'المستخدمون والصلاحيات', desc: 'إدارة الحسابات وأدوار الوصول للنظام.', icon: UsersIcon, allowed: isAdmin },
+  ].filter(x => x.allowed)
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-20">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center">
-            <img src="/logo.png" alt="شعار صيدلية الغسق" className="h-16 w-auto object-contain" />
-          </div>
+    <div className="min-h-screen bg-slate-50/80" dir="rtl">
+      <header className="bg-white border-b sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 text-sm bg-muted px-3 py-1.5 rounded-full">
-              <User className="size-4 text-primary" />
-              <span className="font-medium">{profile?.full_name || profile?.email || '...'}</span>
-              <Badge variant={isAdmin ? 'default' : 'secondary'} className="text-[10px]">{isAdmin ? 'رئيس' : 'موظف'}</Badge>
+            <img src="/logo.png" alt="شعار النظام" className="h-11 sm:h-14 w-auto object-contain" />
+            <div className="hidden sm:block border-r pr-3"><p className="font-bold text-sm">نظام إدارة الصيدلية</p><p className="text-xs text-muted-foreground">{isAdmin ? 'لوحة الرئيس' : 'مساحة الموظف'}</p></div>
+          </div>
+          <div className="flex items-center gap-2">
+            {tab !== 'home' && <Button variant="ghost" size="sm" onClick={() => setTab('home')} className="gap-2"><Home className="size-4" /><span className="hidden sm:inline">الرئيسية</span></Button>}
+            <div className="hidden md:flex items-center gap-2 rounded-xl bg-muted/60 px-3 py-2">
+              <div className="size-8 rounded-full bg-primary/10 text-primary flex items-center justify-center"><User className="size-4" /></div>
+              <div className="leading-tight"><p className="text-sm font-semibold">{profile?.full_name || profile?.email}</p><p className="text-[11px] text-muted-foreground">{isAdmin ? 'رئيس النظام' : 'موظف'}</p></div>
             </div>
-            <Button variant="outline" size="sm" onClick={logout} className="gap-2"><LogOut className="size-4" /> خروج</Button>
+            <Button variant="outline" size="icon" onClick={logout} title="تسجيل الخروج"><LogOut className="size-4" /></Button>
           </div>
         </div>
       </header>
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className={`grid h-auto w-full ${isAdmin ? 'grid-cols-2 sm:grid-cols-5 max-w-5xl' : 'grid-cols-1 max-w-xs'} gap-1`}>
-            <TabsTrigger value="search" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Search className="size-4" /> بحث</TabsTrigger>
-            {isAdmin && <TabsTrigger value="admin" className="gap-1.5 py-2.5 text-xs sm:text-sm"><ShieldCheck className="size-4" /> رفع وإدارة</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="users" className="gap-1.5 py-2.5 text-xs sm:text-sm"><UsersIcon className="size-4" /> المستخدمون {pendingCount > 0 && <Badge className="bg-amber-500 hover:bg-amber-600 num text-[10px] px-1.5">{pendingCount}</Badge>}</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="inventory" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Warehouse className="size-4" /> إدارة المخزن</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="debts" className="gap-1.5 py-2.5 text-xs sm:text-sm"><DollarSign className="size-4" /> الديون</TabsTrigger>}
-          </TabsList>
-          <TabsContent value="search"><SearchTab authedFetch={authedFetch} /></TabsContent>
-          {isAdmin && <TabsContent value="admin"><AdminTab authedFetch={authedFetch} /></TabsContent>}
-          {isAdmin && <TabsContent value="users"><UsersTab authedFetch={authedFetch} currentUser={profile} /></TabsContent>}
-          {isAdmin && <TabsContent value="inventory"><InventorySheetTab authedFetch={authedFetch} /></TabsContent>}
-          {isAdmin && <TabsContent value="debts"><DebtsTab authedFetch={authedFetch} /></TabsContent>}
-        </Tabs>
+
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-5 sm:py-8">
+        {tab === 'home' ? (
+          <div className="space-y-7">
+            <section className="rounded-3xl border bg-white p-5 sm:p-8 shadow-sm overflow-hidden relative">
+              <div className="absolute left-0 top-0 size-52 rounded-full bg-primary/5 -translate-x-1/3 -translate-y-1/3" />
+              <div className="relative">
+                <Badge variant="secondary" className="mb-4">{isAdmin ? 'رئيس النظام' : 'موظف'}</Badge>
+                <h1 className="text-2xl sm:text-4xl font-bold tracking-tight">أهلاً بك، {profile?.full_name?.split(' ')[0] || 'مرحباً'} 👋</h1>
+                <p className="text-muted-foreground mt-2 sm:text-lg">اختر القسم الذي تريد العمل عليه.</p>
+              </div>
+            </section>
+            <section>
+              <div className="mb-4"><h2 className="text-xl font-bold">مساحة العمل</h2><p className="text-sm text-muted-foreground mt-1">تظهر لك فقط الأقسام المسموح بها حسب صلاحية حسابك.</p></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                {homeCards.map(item => <button key={item.value} onClick={() => setTab(item.value)} className="group text-right rounded-2xl border bg-white p-5 sm:p-6 shadow-sm hover:shadow-md hover:border-primary/30 transition-all min-h-40">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition"><item.icon className="size-6" /></div>
+                    <ChevronLeft className="size-5 text-muted-foreground group-hover:text-primary transition" />
+                  </div>
+                  <h3 className="font-bold text-lg mt-5">{item.title}</h3><p className="text-sm text-muted-foreground mt-1.5 leading-6">{item.desc}</p>
+                  {item.value === 'users' && pendingCount > 0 && <Badge className="mt-3 bg-amber-500 hover:bg-amber-500">{pendingCount} طلب بانتظار الموافقة</Badge>}
+                </button>)}
+              </div>
+            </section>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              <Button variant="ghost" size="sm" onClick={() => setTab('home')} className="shrink-0 gap-1.5"><Home className="size-4" /> الرئيسية</Button>
+              {homeCards.map(item => <Button key={item.value} variant={tab === item.value ? 'default' : 'outline'} size="sm" onClick={() => setTab(item.value)} className="shrink-0 gap-1.5"><item.icon className="size-4" /> {item.title}</Button>)}
+            </div>
+            {tab === 'search' && <SearchTab authedFetch={authedFetch} />}
+            {isAdmin && tab === 'admin' && <AdminTab authedFetch={authedFetch} />}
+            {isAdmin && tab === 'users' && <UsersTab authedFetch={authedFetch} currentUser={profile} />}
+            {isAdmin && tab === 'inventory' && <InventorySheetTab authedFetch={authedFetch} />}
+            {isAdmin && tab === 'debts' && <DebtsTab authedFetch={authedFetch} />}
+          </div>
+        )}
       </main>
-      <footer className="border-t mt-12 py-4 text-center text-xs text-muted-foreground">نظام بحث الأدوية — Supabase + Next.js</footer>
+      <footer className="py-7 text-center text-xs text-muted-foreground">نظام إدارة الصيدلية</footer>
     </div>
   )
 }
