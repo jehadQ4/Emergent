@@ -602,7 +602,8 @@ function UsersTab({ authedFetch, currentUser }) {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await authedFetch('/api/users'); const d = await r.json()
+      const r = await authedFetch('/api/users')
+      const d = await r.json()
       setUsers(Array.isArray(d) ? d : [])
     } finally { setLoading(false) }
   }, [authedFetch])
@@ -618,19 +619,18 @@ function UsersTab({ authedFetch, currentUser }) {
       else { toast.success('تم إنشاء المستخدم'); setOpen(false); setForm({ email: '', password: '', full_name: '', role: 'staff' }); refresh() }
     } finally { setCreating(false) }
   }
-
-  async function remove(id, isPending = false) {
-    if (!confirm(isPending ? 'رفض هذا الطلب وحذف المستخدم؟' : 'حذف هذا المستخدم؟')) return
-    const r = await authedFetch(`/api/users/${id}`, { method: 'DELETE' }); const d = await r.json()
-    if (!r.ok) toast.error(d?.error); else { toast.success(isPending ? 'تم رفض الطلب' : 'تم الحذف'); refresh() }
+  async function remove(id, pending = false) {
+    if (!confirm(pending ? 'رفض طلب هذا المستخدم؟' : 'هل تريد حذف هذا المستخدم؟')) return
+    const r = await authedFetch(`/api/users/${id}`, { method: 'DELETE' })
+    const d = await r.json()
+    if (!r.ok) toast.error(d?.error || 'تعذر تنفيذ العملية')
+    else { toast.success(pending ? 'تم رفض الطلب' : 'تم حذف المستخدم'); refresh() }
   }
   async function changeRole(id, role) {
     const r = await authedFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role }) })
-    const d = await r.json(); if (!r.ok) toast.error(d?.error); else { toast.success('تم التحديث'); refresh() }
-  }
-  async function approve(id, role = 'staff') {
-    const r = await authedFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role }) })
-    const d = await r.json(); if (!r.ok) toast.error(d?.error); else { toast.success(`تمت الموافقة كـ ${role === 'admin' ? 'رئيس' : 'موظف'}`); refresh() }
+    const d = await r.json()
+    if (!r.ok) toast.error(d?.error || 'تعذر تغيير الصلاحية')
+    else { toast.success('تم تحديث الصلاحية'); refresh() }
   }
 
   const pending = users.filter(u => u.role === 'pending')
@@ -638,87 +638,41 @@ function UsersTab({ authedFetch, currentUser }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h2 className="text-xl font-bold flex items-center gap-2"><UsersIcon className="size-5 text-primary" /> إدارة المستخدمين</h2><p className="text-sm text-muted-foreground">يمكن للموظفين تسجيل أنفسهم — وأنت توافق أو ترفض من هنا.</p></div>
-        <Button onClick={() => setOpen(true)} className="gap-2" variant="outline"><UserPlus className="size-4" /> إضافة مستخدم مباشرة</Button>
+      <section className="rounded-2xl border bg-white p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div><h2 className="text-xl sm:text-2xl font-bold">المستخدمون والصلاحيات</h2><p className="text-sm text-muted-foreground mt-1">تحكم بمن يستطيع الدخول وما هي صلاحية كل حساب.</p></div>
+        <Button onClick={() => setOpen(true)} className="gap-2 sm:self-auto self-stretch"><UserPlus className="size-4" /> إضافة مستخدم</Button>
+      </section>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">المستخدمون</p><p className="text-2xl font-bold num mt-1">{active.length}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">بانتظار الموافقة</p><p className="text-2xl font-bold num mt-1">{pending.length}</p></CardContent></Card>
+        <Card className="col-span-2 sm:col-span-1"><CardContent className="p-4"><p className="text-xs text-muted-foreground">الرؤساء</p><p className="text-2xl font-bold num mt-1">{active.filter(u => u.role === 'admin').length}</p></CardContent></Card>
       </div>
 
-      {/* Pending users section */}
-      {pending.length > 0 && (
-        <Card className="border-amber-300 bg-amber-50/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-amber-900">
-              <ShieldCheck className="size-5" /> طلبات بانتظار الموافقة
-              <Badge className="bg-amber-500 hover:bg-amber-600 num">{pending.length}</Badge>
-            </CardTitle>
-            <CardDescription>هؤلاء سجلوا أنفسهم وينتظرون موافقتك للوصول إلى النظام.</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <table className="w-full text-sm">
-              <thead className="bg-amber-100/50 text-amber-900"><tr><th className="p-3 text-right">الاسم</th><th className="p-3 text-right">البريد</th><th className="p-3 text-right">تاريخ الطلب</th><th className="p-3 text-left">الإجراء</th></tr></thead>
-              <tbody>{pending.map(u => (
-                <tr key={u.id} className="border-t border-amber-200">
-                  <td className="p-3 font-medium">{u.full_name || '—'}</td>
-                  <td className="p-3">{u.email}</td>
-                  <td className="p-3 num text-muted-foreground">{formatDate(u.created_at)}</td>
-                  <td className="p-3 text-left">
-                    <div className="flex gap-2 justify-end flex-wrap">
-                      <Button size="sm" onClick={() => approve(u.id, 'staff')} className="bg-emerald-600 hover:bg-emerald-700 gap-1">
-                        <ShieldCheck className="size-4" /> موافقة (موظف)
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => approve(u.id, 'admin')} className="gap-1">
-                        <ShieldCheck className="size-4" /> موافقة (رئيس)
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => remove(u.id, true)} className="text-destructive hover:text-destructive">
-                        <X className="size-4" /> رفض
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
+      {pending.length > 0 && <section className="space-y-3">
+        <div><h3 className="font-bold text-lg">طلبات جديدة</h3><p className="text-sm text-muted-foreground">الحسابات التالية لا تستطيع الوصول للبيانات قبل موافقتك.</p></div>
+        <div className="grid gap-3">{pending.map(u => <Card key={u.id} className="border-amber-200"><CardContent className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0"><div className="size-11 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><User className="size-5" /></div><div className="min-w-0"><p className="font-bold truncate">{u.full_name || 'بدون اسم'}</p><p className="text-sm text-muted-foreground truncate">{u.email}</p></div></div>
+          <div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => changeRole(u.id,'staff')} className="gap-1"><ShieldCheck className="size-4" /> قبول كموظف</Button><Button size="sm" variant="outline" onClick={() => changeRole(u.id,'admin')}>قبول كرئيس</Button><Button size="sm" variant="ghost" onClick={() => remove(u.id,true)} className="text-destructive">رفض</Button></div>
+        </CardContent></Card>)}</div>
+      </section>}
 
-      {/* Active users */}
-      <Card><CardContent className="p-0 overflow-hidden">
-        {loading ? <div className="p-6 text-center text-muted-foreground"><Loader2 className="size-5 animate-spin inline-block ml-2" /> جاري التحميل...</div> : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-muted-foreground"><tr><th className="p-3 text-right">الاسم</th><th className="p-3 text-right">البريد</th><th className="p-3 text-right">الدور</th><th className="p-3 text-right">تاريخ الإنشاء</th><th className="p-3"></th></tr></thead>
-            <tbody>{active.map(u => (
-              <tr key={u.id} className="border-t hover:bg-muted/30">
-                <td className="p-3 font-medium">{u.full_name || '—'} {u.id === currentUser?.id && <Badge variant="secondary" className="mr-2">أنت</Badge>}</td>
-                <td className="p-3">{u.email}</td>
-                <td className="p-3">
-                  <Select value={u.role} onValueChange={(v) => changeRole(u.id, v)} disabled={u.id === currentUser?.id}>
-                    <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="admin">رئيس</SelectItem><SelectItem value="staff">موظف</SelectItem></SelectContent>
-                  </Select>
-                </td>
-                <td className="p-3 num text-muted-foreground">{formatDate(u.created_at)}</td>
-                <td className="p-3 text-left">{u.id !== currentUser?.id && (<Button size="sm" variant="ghost" onClick={() => remove(u.id)}><Trash2 className="size-4 text-destructive" /></Button>)}</td>
-              </tr>
-            ))}{active.length === 0 && (<tr><td colSpan="5" className="p-6 text-center text-muted-foreground">لا يوجد مستخدمون مفعّلون.</td></tr>)}</tbody>
-          </table>
-        )}
-      </CardContent></Card>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><UserPlus className="size-5 text-primary" /> إضافة مستخدم مفعّل مباشرة</DialogTitle><DialogDescription>سيتم إنشاء الحساب وتفعيله فوراً (تجاوز خطوة الموافقة).</DialogDescription></DialogHeader>
-          <div className="space-y-3">
-            <Input placeholder="الاسم الكامل" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} />
-            <Input placeholder="البريد الإلكتروني" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-            <Input placeholder="كلمة المرور (8 أحرف أو أكثر)" type="text" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-            <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="staff">موظف (بحث فقط)</SelectItem><SelectItem value="admin">رئيس (بحث + رفع + إدارة)</SelectItem></SelectContent>
-            </Select>
+      <section className="space-y-3">
+        <h3 className="font-bold text-lg">الحسابات المفعّلة</h3>
+        {loading ? <Card><CardContent className="p-8 text-center text-muted-foreground"><Loader2 className="size-5 animate-spin inline ml-2" />جاري التحميل...</CardContent></Card> :
+        <div className="grid gap-3">{active.map(u => <Card key={u.id}><CardContent className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0"><div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0"><User className="size-5" /></div><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold truncate">{u.full_name || 'بدون اسم'}</p>{u.id === currentUser?.id && <Badge variant="secondary">أنت</Badge>}</div><p className="text-sm text-muted-foreground truncate">{u.email}</p></div></div>
+          <div className="flex items-center gap-2">
+            <Select value={u.role} onValueChange={v => changeRole(u.id,v)} disabled={u.id === currentUser?.id}><SelectTrigger className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">رئيس</SelectItem><SelectItem value="staff">موظف</SelectItem></SelectContent></Select>
+            {u.id !== currentUser?.id && <Button size="icon" variant="ghost" onClick={() => remove(u.id)} title="حذف المستخدم"><Trash2 className="size-4 text-destructive" /></Button>}
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button onClick={create} disabled={creating}>{creating ? <Loader2 className="size-4 animate-spin" /> : 'إنشاء'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </CardContent></Card>)}{active.length===0 && <Card><CardContent className="p-8 text-center text-muted-foreground">لا توجد حسابات مفعّلة.</CardContent></Card>}</div>}
+      </section>
+
+      <Dialog open={open} onOpenChange={setOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>إضافة مستخدم</DialogTitle><DialogDescription>الحساب الذي تنشئه هنا سيكون مفعّلاً مباشرة بالصلاحية التي تختارها.</DialogDescription></DialogHeader>
+        <div className="space-y-3"><Input placeholder="الاسم الكامل" value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})}/><Input placeholder="البريد الإلكتروني" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/><Input placeholder="كلمة المرور — 8 أحرف أو أكثر" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><Select value={form.role} onValueChange={v=>setForm({...form,role:v})}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="staff">موظف — بحث فقط</SelectItem><SelectItem value="admin">رئيس — جميع الصلاحيات</SelectItem></SelectContent></Select></div>
+        <DialogFooter><Button variant="outline" onClick={()=>setOpen(false)}>إلغاء</Button><Button onClick={create} disabled={creating}>{creating?<Loader2 className="size-4 animate-spin"/>:'إنشاء الحساب'}</Button></DialogFooter>
+      </DialogContent></Dialog>
     </div>
   )
 }
