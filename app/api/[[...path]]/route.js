@@ -45,6 +45,13 @@ async function getUserProfile(request) {
   return profile
 }
 
+function requireActiveProfile(profile) {
+  if (!profile) return { error: 'unauthenticated', status: 401 }
+  if (profile.role === 'pending') return { error: 'account pending approval', status: 403 }
+  if (!['admin', 'staff'].includes(profile.role)) return { error: 'forbidden', status: 403 }
+  return null
+}
+
 const INVENTORY_WEBHOOKS = {
   get: process.env.N8N_GET_MEDICINES_URL || 'https://n8n.jehadq4.io/webhook/get-medicines',
   update: process.env.N8N_UPDATE_STOCK_URL || 'https://n8n.jehadq4.io/webhook/update-stock',
@@ -297,7 +304,8 @@ async function handle(request, { params }) {
     // -------- STATS (معدلة لتشمل إحصائيات حسب المخزن) --------
     if (route === '/stats' && method === 'GET') {
       const profile = await getUserProfile(request)
-      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      const accessError = requireActiveProfile(profile)
+      if (accessError) return cors(NextResponse.json({ error: accessError.error }, { status: accessError.status }))
       
       const sb = supabaseAdmin()
       const latestId = await getLatestUploadId(sb)
@@ -343,7 +351,8 @@ async function handle(request, { params }) {
     // -------- UPLOADS LIST (auth required) --------
     if (route === '/uploads' && method === 'GET') {
       const profile = await getUserProfile(request)
-      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      const accessError = requireActiveProfile(profile)
+      if (accessError) return cors(NextResponse.json({ error: accessError.error }, { status: accessError.status }))
       const sb = supabaseAdmin()
       const { data, error } = await sb.from('uploads').select('*').limit(500)
       if (error) throw error
@@ -412,7 +421,8 @@ async function handle(request, { params }) {
     // -------- LIVE SUGGESTIONS (auth required) - filters to LATEST UPLOAD ONLY --------
     if (route === '/suggest' && method === 'GET') {
       const profile = await getUserProfile(request)
-      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      const accessError = requireActiveProfile(profile)
+      if (accessError) return cors(NextResponse.json({ error: accessError.error }, { status: accessError.status }))
       const url = new URL(request.url)
       const q = (url.searchParams.get('q') || '').trim()
       if (!q) return cors(NextResponse.json([]))
@@ -443,7 +453,8 @@ async function handle(request, { params }) {
     // -------- SEARCH (auth required) - filters to LATEST UPLOAD ONLY --------
     if (route === '/search' && method === 'GET') {
       const profile = await getUserProfile(request)
-      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      const accessError = requireActiveProfile(profile)
+      if (accessError) return cors(NextResponse.json({ error: accessError.error }, { status: accessError.status }))
       const url = new URL(request.url)
       const q = (url.searchParams.get('q') || '').trim()
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 100)
@@ -460,7 +471,8 @@ async function handle(request, { params }) {
     // -------- ONE MEDICINE (auth required) - full details loaded only when opened --------
     if (route.startsWith('/medicine/') && method === 'GET') {
       const profile = await getUserProfile(request)
-      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      const accessError = requireActiveProfile(profile)
+      if (accessError) return cors(NextResponse.json({ error: accessError.error }, { status: accessError.status }))
       const id = route.split('/')[2]
       const sb = supabaseAdmin()
       const { data, error } = await sb.from('medicines').select('*').eq('id', id).maybeSingle()
@@ -488,7 +500,8 @@ async function handle(request, { params }) {
     // -------- HISTORY (auth required) --------
     if (route === '/history' && method === 'GET') {
       const profile = await getUserProfile(request)
-      if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
+      const accessError = requireActiveProfile(profile)
+      if (accessError) return cors(NextResponse.json({ error: accessError.error }, { status: accessError.status }))
       const url = new URL(request.url)
       const name = (url.searchParams.get('name') || '').trim()
       if (!name) return cors(NextResponse.json([]))
