@@ -584,7 +584,7 @@ async function handle(request, { params }) {
     if (route === '/inventory/source' && method === 'GET') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.get)
       return cors(NextResponse.json(data))
     }
@@ -592,7 +592,7 @@ async function handle(request, { params }) {
     if (route === '/inventory/stock' && method === 'POST') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const body = await request.json()
       const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.update, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -603,7 +603,7 @@ async function handle(request, { params }) {
     if (route === '/inventory/add' && method === 'POST') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const body = await request.json()
       const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.add, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -614,7 +614,7 @@ async function handle(request, { params }) {
     if (route === '/inventory/delete' && method === 'POST') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const body = await request.json()
       const data = await callInventoryWebhook(INVENTORY_WEBHOOKS.delete, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -625,7 +625,7 @@ async function handle(request, { params }) {
     if (route === '/inventory' && method === 'GET') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const url = new URL(request.url)
       const q = (url.searchParams.get('q') || '').trim().toLowerCase()
       const raw = await callInventoryWebhook(INVENTORY_WEBHOOKS.get)
@@ -649,7 +649,7 @@ async function handle(request, { params }) {
     if (route === '/inventory' && method === 'POST') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const body = await request.json()
       if (!body?.name?.trim()) return cors(NextResponse.json({ error: 'اسم الدواء مطلوب' }, { status: 400 }))
       const payload = {
@@ -670,7 +670,7 @@ async function handle(request, { params }) {
     if (route.startsWith('/inventory/') && method === 'PATCH') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const id = route.split('/')[2]
       const body = await request.json()
       if (!['increase', 'dispense'].includes(body?.action)) return cors(NextResponse.json({ error: 'إجراء غير صالح' }, { status: 400 }))
@@ -691,7 +691,7 @@ async function handle(request, { params }) {
     if (route.startsWith('/inventory/') && method === 'DELETE') {
       const profile = await getUserProfile(request)
       if (!profile) return cors(NextResponse.json({ error: 'unauthenticated' }, { status: 401 }))
-      if (profile.role !== 'admin') return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
+      if (!['admin', 'staff'].includes(profile.role)) return cors(NextResponse.json({ error: 'forbidden' }, { status: 403 }))
       const id = route.split('/')[2]
       const body = await request.json().catch(() => ({}))
       const payload = { row_number: Number(body.row_number || id), medicine_code: body.medicine_code, id: body.medicine_code, 'رمز الدواء': body.medicine_code }
