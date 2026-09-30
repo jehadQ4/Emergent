@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, DollarSign, Hash, Package, History, Loader2, ShieldCheck, X, LogOut, UserPlus, User, Trash2, Users as UsersIcon, Warehouse, Plus, Minus, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react'
+import { Search, Upload, Pill, Building2, FileSpreadsheet, Database, Calendar, DollarSign, Hash, Package, History, Loader2, ShieldCheck, X, LogOut, UserPlus, User, Trash2, Users as UsersIcon, Warehouse, Plus, Minus, AlertTriangle, RefreshCw, ExternalLink, Home, ChevronLeft, Menu, Eye, EyeOff, LockKeyhole, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { getBrowserSupabase } from '@/lib/supabaseBrowser'
 import InventorySheetTab from '@/components/inventory-sheet-tab'
@@ -724,77 +724,74 @@ function UsersTab({ authedFetch, currentUser }) {
 }
 
 function LoginScreen({ onLoggedIn }) {
-  const [mode, setMode] = useState('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [loading, setLoading] = useState(false);
-const submit = async (e) => {
-  e.preventDefault();
+  const [mode, setMode] = useState('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
-  setLoading(true);
-
-  try {
-    const sb = getBrowserSupabase();
-
-    if (mode === "login") {
-      const { error } = await sb.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        toast.error(error.message);
-        return;
+  const submit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const sb = getBrowserSupabase()
+      if (mode === 'login') {
+        const { error } = await sb.auth.signInWithPassword({ email, password })
+        if (error) { toast.error('البريد الإلكتروني أو كلمة المرور غير صحيحة'); return }
+        toast.success('أهلاً بك')
+      } else {
+        const response = await fetch('/api/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, full_name: fullName }),
+        })
+        const data = await response.json()
+        if (!response.ok) { toast.error(data?.error || 'تعذر إنشاء الحساب'); return }
+        toast.success('تم إنشاء الحساب وهو بانتظار موافقة الرئيس')
+        setMode('login')
       }
-
-      toast.success("تم تسجيل الدخول");
-    } else {
-      const response = await fetch('/api/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, full_name: fullName }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        toast.error(data?.error || 'تعذر إنشاء الحساب');
-        return;
-      }
-      toast.success("تم إنشاء الحساب وهو بانتظار موافقة الرئيس");
-      setMode('login');
-    }
-  } finally {
-    setLoading(false);
+    } finally { setLoading(false) }
   }
-};
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-white to-cyan-50 p-4">
-      <Card className="w-full max-w-md shadow-xl border-0">
-        <CardHeader className="text-center pb-4">
-          <img src="/logo.png" alt="شعار صيدلية الغسق" className="h-32 w-auto object-contain mx-auto drop-shadow-sm" />
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2 mb-4 bg-muted p-1 rounded-lg">
-            <button type="button" onClick={() => setMode('login')} className={`flex-1 py-2 rounded-md text-sm font-medium transition ${mode === 'login' ? 'bg-white shadow text-foreground' : 'text-muted-foreground'}`}>تسجيل دخول</button>
-            <button type="button" onClick={() => setMode('signup')} className={`flex-1 py-2 rounded-md text-sm font-medium transition ${mode === 'signup' ? 'bg-white shadow text-foreground' : 'text-muted-foreground'}`}>إنشاء حساب</button>
+    <div className="min-h-screen bg-slate-50 flex" dir="rtl">
+      <section className="hidden lg:flex lg:w-[48%] bg-primary text-primary-foreground relative overflow-hidden p-12 flex-col justify-between">
+        <div className="absolute -top-32 -left-32 size-96 rounded-full bg-white/5" />
+        <div className="absolute bottom-10 right-10 size-72 rounded-full bg-white/5" />
+        <img src="/logo.png" alt="شعار النظام" className="h-24 w-auto object-contain self-start brightness-0 invert" />
+        <div className="relative max-w-lg">
+          <div className="size-12 rounded-2xl bg-white/10 flex items-center justify-center mb-6"><Sparkles className="size-6" /></div>
+          <h1 className="text-4xl font-bold leading-tight">إدارة الصيدلية<br />بشكل أبسط وأوضح.</h1>
+          <p className="mt-5 text-primary-foreground/75 text-lg leading-8">البحث عن الأدوية، إدارة المخزن، متابعة الديون والملفات من واجهة واحدة آمنة وسريعة.</p>
+        </div>
+        <p className="text-sm text-primary-foreground/55">نظام إدارة الصيدلية</p>
+      </section>
+
+      <section className="flex-1 flex items-center justify-center p-4 sm:p-8">
+        <div className="w-full max-w-md">
+          <div className="lg:hidden text-center mb-8"><img src="/logo.png" alt="شعار النظام" className="h-24 w-auto object-contain mx-auto" /></div>
+          <div className="mb-7">
+            <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4"><LockKeyhole className="size-6" /></div>
+            <h2 className="text-3xl font-bold tracking-tight">{mode === 'login' ? 'أهلاً بك من جديد' : 'إنشاء حساب جديد'}</h2>
+            <p className="text-muted-foreground mt-2">{mode === 'login' ? 'سجّل الدخول للوصول إلى مساحة عملك.' : 'أنشئ حسابك وسيتم تفعيله بعد موافقة الرئيس.'}</p>
           </div>
-          <form onSubmit={submit} className="space-y-3">
-            {mode === 'signup' && (
-              <div className="space-y-1"><label className="text-sm font-medium">الاسم الكامل</label><Input value={fullName} onChange={e => setFullName(e.target.value)} required className="h-11" placeholder="اسمك الكامل" /></div>
-            )}
-            <div className="space-y-1"><label className="text-sm font-medium">البريد الإلكتروني</label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="h-11" placeholder="name@pharmacy.com" /></div>
-            <div className="space-y-1"><label className="text-sm font-medium">كلمة المرور</label><Input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} className="h-11" placeholder="••••••••" /></div>
-            <Button type="submit" className="w-full h-11 mt-2" disabled={loading}>
-              {loading ? <Loader2 className="size-4 animate-spin" /> : (mode === 'login' ? 'دخول' : 'إنشاء حساب جديد')}
-            </Button>
+          <div className="flex gap-1 mb-6 bg-muted p-1 rounded-xl">
+            <button type="button" onClick={() => setMode('login')} className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition ${mode === 'login' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}>تسجيل الدخول</button>
+            <button type="button" onClick={() => setMode('signup')} className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition ${mode === 'signup' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}>حساب جديد</button>
+          </div>
+          <form onSubmit={submit} className="space-y-4">
+            {mode === 'signup' && <div className="space-y-2"><label className="text-sm font-medium">الاسم الكامل</label><Input value={fullName} onChange={e => setFullName(e.target.value)} required className="h-12 bg-white" placeholder="الاسم الكامل" /></div>}
+            <div className="space-y-2"><label className="text-sm font-medium">البريد الإلكتروني</label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="h-12 bg-white text-left" dir="ltr" placeholder="name@example.com" /></div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">كلمة المرور</label>
+              <div className="relative"><Input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={8} className="h-12 bg-white pl-11" placeholder="••••••••" /><button type="button" onClick={() => setShowPassword(v => !v)} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}</button></div>
+            </div>
+            <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={loading}>{loading ? <Loader2 className="size-5 animate-spin" /> : (mode === 'login' ? 'دخول إلى النظام' : 'إرسال طلب التسجيل')}</Button>
           </form>
-          {mode === 'signup' && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mt-3 text-center">
-              ⏳ سيتم تفعيل حسابك بعد موافقة الرئيس من داخل النظام.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          {mode === 'signup' && <p className="text-xs text-muted-foreground bg-muted/60 rounded-xl p-3 mt-4 text-center">الحساب الجديد لا يحصل على أي صلاحية قبل موافقة الرئيس.</p>}
+        </div>
+      </section>
     </div>
   )
 }
@@ -822,7 +819,7 @@ function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [bootLoading, setBootLoading] = useState(true)
-  const [tab, setTab] = useState('search')
+  const [tab, setTab] = useState('home')
   const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
@@ -862,40 +859,73 @@ function App() {
 
   const isAdmin = profile?.role === 'admin'
 
+  const homeCards = [
+    { value: 'search', title: 'البحث عن الأدوية', desc: 'بحث سريع في جميع ملفات الأدوية والفواتير.', icon: Search, allowed: true },
+    { value: 'inventory', title: 'إدارة المخزن', desc: 'الكميات، الإضافة، الصرف والتنبيهات.', icon: Warehouse, allowed: isAdmin },
+    { value: 'debts', title: 'ديون المذاخر', desc: 'متابعة الديون والقوائم وتحليل المذاخر.', icon: DollarSign, allowed: isAdmin },
+    { value: 'admin', title: 'رفع وإدارة الملفات', desc: 'رفع الملفات ومتابعة عمليات الاستيراد.', icon: Upload, allowed: isAdmin },
+    { value: 'users', title: 'المستخدمون والصلاحيات', desc: 'إدارة الحسابات وأدوار الوصول للنظام.', icon: UsersIcon, allowed: isAdmin },
+  ].filter(x => x.allowed)
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-20">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center">
-            <img src="/logo.png" alt="شعار صيدلية الغسق" className="h-16 w-auto object-contain" />
-          </div>
+    <div className="min-h-screen bg-slate-50/80" dir="rtl">
+      <header className="bg-white border-b sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 text-sm bg-muted px-3 py-1.5 rounded-full">
-              <User className="size-4 text-primary" />
-              <span className="font-medium">{profile?.full_name || profile?.email || '...'}</span>
-              <Badge variant={isAdmin ? 'default' : 'secondary'} className="text-[10px]">{isAdmin ? 'رئيس' : 'موظف'}</Badge>
+            <img src="/logo.png" alt="شعار النظام" className="h-11 sm:h-14 w-auto object-contain" />
+            <div className="hidden sm:block border-r pr-3"><p className="font-bold text-sm">نظام إدارة الصيدلية</p><p className="text-xs text-muted-foreground">{isAdmin ? 'لوحة الرئيس' : 'مساحة الموظف'}</p></div>
+          </div>
+          <div className="flex items-center gap-2">
+            {tab !== 'home' && <Button variant="ghost" size="sm" onClick={() => setTab('home')} className="gap-2"><Home className="size-4" /><span className="hidden sm:inline">الرئيسية</span></Button>}
+            <div className="hidden md:flex items-center gap-2 rounded-xl bg-muted/60 px-3 py-2">
+              <div className="size-8 rounded-full bg-primary/10 text-primary flex items-center justify-center"><User className="size-4" /></div>
+              <div className="leading-tight"><p className="text-sm font-semibold">{profile?.full_name || profile?.email}</p><p className="text-[11px] text-muted-foreground">{isAdmin ? 'رئيس النظام' : 'موظف'}</p></div>
             </div>
-            <Button variant="outline" size="sm" onClick={logout} className="gap-2"><LogOut className="size-4" /> خروج</Button>
+            <Button variant="outline" size="icon" onClick={logout} title="تسجيل الخروج"><LogOut className="size-4" /></Button>
           </div>
         </div>
       </header>
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className={`grid h-auto w-full ${isAdmin ? 'grid-cols-2 sm:grid-cols-5 max-w-5xl' : 'grid-cols-1 max-w-xs'} gap-1`}>
-            <TabsTrigger value="search" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Search className="size-4" /> بحث</TabsTrigger>
-            {isAdmin && <TabsTrigger value="admin" className="gap-1.5 py-2.5 text-xs sm:text-sm"><ShieldCheck className="size-4" /> رفع وإدارة</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="users" className="gap-1.5 py-2.5 text-xs sm:text-sm"><UsersIcon className="size-4" /> المستخدمون {pendingCount > 0 && <Badge className="bg-amber-500 hover:bg-amber-600 num text-[10px] px-1.5">{pendingCount}</Badge>}</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="inventory" className="gap-1.5 py-2.5 text-xs sm:text-sm"><Warehouse className="size-4" /> إدارة المخزن</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="debts" className="gap-1.5 py-2.5 text-xs sm:text-sm"><DollarSign className="size-4" /> الديون</TabsTrigger>}
-          </TabsList>
-          <TabsContent value="search"><SearchTab authedFetch={authedFetch} /></TabsContent>
-          {isAdmin && <TabsContent value="admin"><AdminTab authedFetch={authedFetch} /></TabsContent>}
-          {isAdmin && <TabsContent value="users"><UsersTab authedFetch={authedFetch} currentUser={profile} /></TabsContent>}
-          {isAdmin && <TabsContent value="inventory"><InventorySheetTab authedFetch={authedFetch} /></TabsContent>}
-          {isAdmin && <TabsContent value="debts"><DebtsTab authedFetch={authedFetch} /></TabsContent>}
-        </Tabs>
+
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-5 sm:py-8">
+        {tab === 'home' ? (
+          <div className="space-y-7">
+            <section className="rounded-3xl border bg-white p-5 sm:p-8 shadow-sm overflow-hidden relative">
+              <div className="absolute left-0 top-0 size-52 rounded-full bg-primary/5 -translate-x-1/3 -translate-y-1/3" />
+              <div className="relative">
+                <Badge variant="secondary" className="mb-4">{isAdmin ? 'رئيس النظام' : 'موظف'}</Badge>
+                <h1 className="text-2xl sm:text-4xl font-bold tracking-tight">أهلاً بك، {profile?.full_name?.split(' ')[0] || 'مرحباً'} 👋</h1>
+                <p className="text-muted-foreground mt-2 sm:text-lg">اختر القسم الذي تريد العمل عليه.</p>
+              </div>
+            </section>
+            <section>
+              <div className="mb-4"><h2 className="text-xl font-bold">مساحة العمل</h2><p className="text-sm text-muted-foreground mt-1">تظهر لك فقط الأقسام المسموح بها حسب صلاحية حسابك.</p></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                {homeCards.map(item => <button key={item.value} onClick={() => setTab(item.value)} className="group text-right rounded-2xl border bg-white p-5 sm:p-6 shadow-sm hover:shadow-md hover:border-primary/30 transition-all min-h-40">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition"><item.icon className="size-6" /></div>
+                    <ChevronLeft className="size-5 text-muted-foreground group-hover:text-primary transition" />
+                  </div>
+                  <h3 className="font-bold text-lg mt-5">{item.title}</h3><p className="text-sm text-muted-foreground mt-1.5 leading-6">{item.desc}</p>
+                  {item.value === 'users' && pendingCount > 0 && <Badge className="mt-3 bg-amber-500 hover:bg-amber-500">{pendingCount} طلب بانتظار الموافقة</Badge>}
+                </button>)}
+              </div>
+            </section>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              <Button variant="ghost" size="sm" onClick={() => setTab('home')} className="shrink-0 gap-1.5"><Home className="size-4" /> الرئيسية</Button>
+              {homeCards.map(item => <Button key={item.value} variant={tab === item.value ? 'default' : 'outline'} size="sm" onClick={() => setTab(item.value)} className="shrink-0 gap-1.5"><item.icon className="size-4" /> {item.title}</Button>)}
+            </div>
+            {tab === 'search' && <SearchTab authedFetch={authedFetch} />}
+            {isAdmin && tab === 'admin' && <AdminTab authedFetch={authedFetch} />}
+            {isAdmin && tab === 'users' && <UsersTab authedFetch={authedFetch} currentUser={profile} />}
+            {isAdmin && tab === 'inventory' && <InventorySheetTab authedFetch={authedFetch} />}
+            {isAdmin && tab === 'debts' && <DebtsTab authedFetch={authedFetch} />}
+          </div>
+        )}
       </main>
-      <footer className="border-t mt-12 py-4 text-center text-xs text-muted-foreground">نظام بحث الأدوية — Supabase + Next.js</footer>
+      <footer className="py-7 text-center text-xs text-muted-foreground">نظام إدارة الصيدلية</footer>
     </div>
   )
 }
