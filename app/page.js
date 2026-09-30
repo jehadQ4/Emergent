@@ -815,7 +815,7 @@ function App() {
 
   const homeCards = [
     { value: 'search', title: 'البحث عن الأدوية', desc: 'بحث سريع في جميع ملفات الأدوية والفواتير.', icon: Search, allowed: true },
-    { value: 'inventory', title: 'إدارة المخزن', desc: 'الكميات، الإضافة، الصرف والتنبيهات.', icon: Warehouse, allowed: isAdmin },
+    { value: 'inventory', title: 'إدارة المخزن', desc: 'الكميات، الإضافة، الصرف والتنبيهات.', icon: Warehouse, allowed: true },
     { value: 'debts', title: 'ديون المذاخر', desc: 'متابعة الديون والقوائم وتحليل المذاخر.', icon: DollarSign, allowed: isAdmin },
     { value: 'admin', title: 'رفع وإدارة الملفات', desc: 'رفع الملفات ومتابعة عمليات الاستيراد.', icon: Upload, allowed: isAdmin },
     { value: 'users', title: 'المستخدمون والصلاحيات', desc: 'إدارة الحسابات وأدوار الوصول للنظام.', icon: UsersIcon, allowed: isAdmin },
@@ -874,7 +874,7 @@ function App() {
             {tab === 'search' && <SearchTab authedFetch={authedFetch} />}
             {isAdmin && tab === 'admin' && <AdminTab authedFetch={authedFetch} />}
             {isAdmin && tab === 'users' && <UsersTab authedFetch={authedFetch} currentUser={profile} />}
-            {isAdmin && tab === 'inventory' && <InventorySheetTab authedFetch={authedFetch} />}
+            {tab === 'inventory' && <InventorySheetTab authedFetch={authedFetch} />}
             {isAdmin && tab === 'debts' && <DebtsTab authedFetch={authedFetch} />}
           </div>
         )}
